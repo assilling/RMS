@@ -185,7 +185,7 @@ async function refreshStatus() {
         const data = await response.json();
         updateUI(data);
     } catch (error) {
-        showAlert('接続エラー: ' + error, 'error');
+        alert('接続エラー: ' + error);
     }
 }
 
