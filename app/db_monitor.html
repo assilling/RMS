@@ -80,6 +80,31 @@ body {
 .button-success { background: #28a745; color: white; }
 .button:hover { opacity: 0.8; }
 .button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 呼吸效果圆点动画 */
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+.status-dot.normal {
+    background: #28a745;
+    animation: breathe-green 2s ease-in-out infinite;
+}
+.status-dot.down {
+    background: #dc3545;
+    animation: breathe-red 2s ease-in-out infinite;
+}
+@keyframes breathe-green {
+    0%, 100% { opacity: 1; box-shadow: 0 0 5px #28a745; }
+    50% { opacity: 0.4; box-shadow: 0 0 15px #28a745; }
+}
+@keyframes breathe-red {
+    0%, 100% { opacity: 1; box-shadow: 0 0 5px #dc3545; }
+    50% { opacity: 0.4; box-shadow: 0 0 15px #dc3545; }
+}
 </style>
 </head>
 <body>
@@ -95,10 +120,11 @@ body {
 
 <div class="db-status-container">
     <div class="db-server master" id="masterServer">
-        <div class="server-name">Master ( MASTER )</div>
+        <div class="server-name">Master ( Source )</div>
         <div class="server-ip" id="masterIP">192.168.10.102</div>
         <div class="server-status">
-            <span id="masterStatus">確認中...</span>
+            <span class="status-dot normal" id="masterDot"></span>
+            <span id="masterStatus">ステータス：確認中...</span>
         </div>
         <div class="server-details">
             <div>役割: <span id="masterRole">SOURCE</span></div>
@@ -111,13 +137,14 @@ body {
     </div>
 
     <div class="db-server slave" id="slaveServer">
-        <div class="server-name">Slave ( REPLICA )</div>
+        <div class="server-name">Slave ( Replica )</div>
         <div class="server-ip" id="slaveIP">192.168.10.103</div>
         <div class="server-status">
-            <span id="slaveStatus">確認中...</span>
+            <span class="status-dot normal" id="slaveDot"></span>
+            <span id="slaveStatus">ステータス：確認中...</span>
         </div>
         <div class="server-details">
-            <div>役割: <span id="slaveRole">REPLICA</span></div>
+            <div>役割: <span id="slaveRole">Replica</span></div>
             <div>遅延: <span id="slaveLag">-</span></div>
             <div>IO: <span id="slaveIO">-</span></div>
             <div>SQL: <span id="slaveSQL">-</span></div>
@@ -126,16 +153,16 @@ body {
 </div>
 
 <div class="actions">
-    <button class="button button-danger" onclick="stopMaster()" id="stopMasterBtn">⏹ 主庫停止 (danger!)</button>
-    <button class="button button-success" onclick="switchBack()" id="switchBackBtn">🔄 原主庫に戻す</button>
+    <button class="button button-danger" onclick="stopMaster()" id="stopMasterBtn">⏹ マスター停止 (danger!)</button>
+    <button class="button button-success" onclick="switchBack()" id="switchBackBtn">🔄 以前のマスターに戻す</button>
     <button class="button button-primary" onclick="forceFailover()" id="forceFailoverBtn">⚡ 強制フェイルオーバー</button>
 </div>
 
 <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
     <h3>現在の接続: <span id="currentConnection" style="color: #007bff;">192.168.10.1 (Master)</span></h3>
     <p style="color: #666; font-size: 13px;">
-        ※ 主庫を停止するとシステムは自動的に从庫に切り替わります。<br>
-        ※ 「原主庫に戻す」は主庫が復旧した後に使用してください。
+        ※ マスターを停止すると、システムは自動的にスレーブに切りかわります。<br>
+        ※ 「以前のマスターに戻す」は、マスターが復旧した後で運用してください。
     </p>
 </div>
 </div>
@@ -168,11 +195,13 @@ function updateUI(data) {
 
     // マスター情報
     document.getElementById('masterIP').textContent = data.master.host;
-    document.getElementById('masterStatus').textContent = data.master.status === 'UP' ? '正常' : '故障';
-    // マスター枠：固定SOURCE
-    document.getElementById('masterRole').textContent = 'SOURCE';
+    const masterStatus = data.master.status === 'UP';
+    document.getElementById('masterStatus').textContent = masterStatus ? 'ステータス：正常' : 'ステータス：故障';
+    document.getElementById('masterDot').className = masterStatus ? 'status-dot normal' : 'status-dot down';
+    // マスター枠：isMaster=true → SOURCE
+    document.getElementById('masterRole').textContent = data.master.isMaster ? 'SOURCE' : 'REPLICA';
 
-    // マスター枠：显示Binlog信息
+    // マスター枠：Binlog情報
     document.getElementById('masterBinlog').parentNode.style.display = 'block';
     document.getElementById('masterPos').parentNode.style.display = 'block';
     document.getElementById('masterLag').parentNode.style.display = 'none';
@@ -181,17 +210,19 @@ function updateUI(data) {
     document.getElementById('masterBinlog').textContent = data.master.binlog || '-';
     document.getElementById('masterPos').textContent = data.master.position || '-';
 
-    // マスターの色：绿色边框
-    masterDiv.classList.remove('down');
-    masterDiv.classList.add('master');
+    // マスターの色
+    masterDiv.classList.remove('down', 'master', 'slave');
+    masterDiv.classList.add(masterStatus ? 'master' : 'down');
 
     // スレーブ情報
     document.getElementById('slaveIP').textContent = data.slave.host;
-    document.getElementById('slaveStatus').textContent = data.slave.status === 'UP' ? '正常' : '故障';
-    // スレーブ枠：固定REPLICA
-    document.getElementById('slaveRole').textContent = 'REPLICA';
+    const slaveStatus = data.slave.status === 'UP';
+    document.getElementById('slaveStatus').textContent = slaveStatus ? 'ステータス：正常' : 'ステータス：故障';
+    document.getElementById('slaveDot').className = slaveStatus ? 'status-dot normal' : 'status-dot down';
+    // スレーブ枠：isSlave=true → REPLICA
+    document.getElementById('slaveRole').textContent = data.slave.isSlave ? 'REPLICA' : 'SOURCE';
 
-    // スレーブ枠：显示复制状态
+    // スレーブ枠：レプリケーション状態
     document.getElementById('slaveLag').parentNode.style.display = 'block';
     document.getElementById('slaveIO').parentNode.style.display = 'block';
     document.getElementById('slaveSQL').parentNode.style.display = 'block';
@@ -217,15 +248,15 @@ function updateUI(data) {
 
 }
 
-// 主庫停止 - APIでSSHコマンドを実行
+// マスター停止 - APIでSSHコマンドを実行
 async function stopMaster() {
-    // 先に現在の主庫状態を取得
+    // 先に現在のマスター状態を取得
     try {
         const statusRes = await fetch('/api/db/status');
         const statusData = await statusRes.json();
         const masterIP = statusData.master.host;
 
-        if (!confirm(`⚠️ 警告：主庫 (${masterIP}) の MySQL サービスを停止しますか？\n\nこれによりシステムが自動的に从庫に切りかわります。`)) {
+        if (!confirm(`⚠️ 警告：マスター (${masterIP}) の MySQL サービスを停止しますか？\n\nこれによりシステムは自動的にスレーブに切りかわります。`)) {
             return;
         }
 
@@ -277,7 +308,7 @@ async function forceFailover() {
     }
 }
 
-// 元主庫に戻す
+// 以前のマスターに戻す
 async function switchBack() {
     try {
         const response = await fetch('/api/db/switch-back', { method: 'POST' });

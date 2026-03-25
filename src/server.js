@@ -127,110 +127,113 @@ async function queryWithTimeout(pool, sql, timeout = 3000) {
 app.get('/api/db/status', async (req, res) => {
   console.log('[DB Status] ステータス確認中...');
   try {
-    // 192.168.10.102の複製状態を確認 (MySQL 8: SHOW SLAVE STATUS)
+    // 192.168.10.102の状態を確認
     const db1P = queryWithTimeout(masterPool, 'SHOW SLAVE STATUS', 3000)
       .then((rows) => {
         console.log('[DB Status] 102 取得成功, rows:', rows);
-        if (rows && rows.length > 0) {
-          // 複製状態あり = 从庫
-          return {
-            host: '192.168.10.102',
-            status: 'UP',
-            role: 'REPLICA',
-            isMaster: false,
-            binlog: rows[0]?.Master_Log_File || null,
-            position: rows[0]?.Read_Master_Log_Pos || null,
-            secondsBehindMaster: rows[0]?.Seconds_Behind_Master || 0,
-            slaveIO: rows[0]?.Slave_IO_Running || 'No',
-            slaveSQL: rows[0]?.Slave_SQL_Running || 'No'
-          };
-        } else {
-          // 複製状態なし = 主庫、binlogと半同期状態を確認 (MySQL 8: SHOW MASTER STATUS)
-          return queryWithTimeout(masterPool, 'SHOW MASTER STATUS', 3000)
-            .then((binlogRows) => {
-              const latestLog = binlogRows[0] ? binlogRows[binlogRows.length - 1] : null;
-              return queryWithTimeout(masterPool, "SHOW STATUS LIKE 'Rpl_semi_sync_master_status'", 3000)
-                .then((semisyncRows) => {
-                  const semisyncOn = semisyncRows && semisyncRows.length > 0 && semisyncRows[0]?.Value === 'ON';
-                  return {
-                    host: '192.168.10.102',
-                    status: 'UP',
-                    role: 'PRIMARY',
-                    isMaster: true,
-                    binlog: latestLog?.File || null,
-                    position: latestLog?.Position || null,
-                    semiSync: semisyncOn ? 'ON' : 'OFF'
-                  };
-                });
-            });
-        }
+        return queryWithTimeout(masterPool, 'SHOW MASTER STATUS', 3000)
+          .then((binlogRows) => {
+            const latestLog = binlogRows[0] ? binlogRows[binlogRows.length - 1] : null;
+            // 半同期レプリケーション状態を取得
+            return queryWithTimeout(masterPool, "SHOW STATUS LIKE 'Rpl_semi_sync_master_status'", 3000)
+              .then((masterRows) => {
+                const isMaster = masterRows && masterRows.length > 0 && masterRows[0]?.Value === 'ON';
+                return queryWithTimeout(masterPool, "SHOW STATUS LIKE 'Rpl_semi_sync_slave_status'", 3000)
+                  .then((slaveRows) => {
+                    const isSlave = slaveRows && slaveRows.length > 0 && slaveRows[0]?.Value === 'ON';
+                    return {
+                      host: '192.168.10.102',
+                      status: 'UP',
+                      isMaster: isMaster,
+                      isSlave: isSlave,
+                      binlog: latestLog?.File || null,
+                      position: latestLog?.Position || null,
+                      secondsBehindMaster: rows && rows.length > 0 ? (rows[0]?.Seconds_Behind_Master || 0) : 0,
+                      slaveIO: rows && rows.length > 0 ? (rows[0]?.Slave_IO_Running || 'No') : '-',
+                      slaveSQL: rows && rows.length > 0 ? (rows[0]?.Slave_SQL_Running || 'No') : '-',
+                      semiSync: isMaster ? 'ON' : 'OFF'
+                    };
+                  });
+              });
+          });
       })
       .catch((e) => {
         console.log('[DB Status] 102 失敗:', e.message);
         return {
           host: '192.168.10.102',
           status: 'DOWN',
-          role: 'UNKNOWN',
+          isMaster: false,
+          isSlave: false,
           error: e.message
         };
       });
 
-    // 192.168.10.103の複製状態を確認 (MySQL 8: SHOW SLAVE STATUS)
+    // 192.168.10.103の状態を確認
     const db2P = queryWithTimeout(slavePool, 'SHOW SLAVE STATUS', 3000)
       .then((rows) => {
         console.log('[DB Status] 103 取得成功, rows:', rows);
-        if (rows && rows.length > 0) {
-          return {
-            host: '192.168.10.103',
-            status: 'UP',
-            role: 'REPLICA',
-            isMaster: false,
-            secondsBehindMaster: rows[0]?.Seconds_Behind_Master || 0,
-            slaveIO: rows[0]?.Slave_IO_Running || 'No',
-            slaveSQL: rows[0]?.Slave_SQL_Running || 'No'
-          };
-        } else {
-          return queryWithTimeout(slavePool, 'SHOW MASTER STATUS', 3000)
-            .then((binlogRows) => {
-              const latestLog = binlogRows[0] ? binlogRows[binlogRows.length - 1] : null;
-              return {
-                host: '192.168.10.103',
-                status: 'UP',
-                role: 'PRIMARY',
-                isMaster: true,
-                binlog: latestLog?.File || null,
-                position: latestLog?.Position || null
-              };
-            });
-        }
+        return queryWithTimeout(slavePool, 'SHOW MASTER STATUS', 3000)
+          .then((binlogRows) => {
+            const latestLog = binlogRows[0] ? binlogRows[binlogRows.length - 1] : null;
+            return queryWithTimeout(slavePool, "SHOW STATUS LIKE 'Rpl_semi_sync_master_status'", 3000)
+              .then((masterRows) => {
+                const isMaster = masterRows && masterRows.length > 0 && masterRows[0]?.Value === 'ON';
+                return queryWithTimeout(slavePool, "SHOW STATUS LIKE 'Rpl_semi_sync_slave_status'", 3000)
+                  .then((slaveRows) => {
+                    const isSlave = slaveRows && slaveRows.length > 0 && slaveRows[0]?.Value === 'ON';
+                    return {
+                      host: '192.168.10.103',
+                      status: 'UP',
+                      isMaster: isMaster,
+                      isSlave: isSlave,
+                      binlog: latestLog?.File || null,
+                      position: latestLog?.Position || null,
+                      secondsBehindMaster: rows && rows.length > 0 ? (rows[0]?.Seconds_Behind_Master || 0) : 0,
+                      slaveIO: rows && rows.length > 0 ? (rows[0]?.Slave_IO_Running || 'No') : '-',
+                      slaveSQL: rows && rows.length > 0 ? (rows[0]?.Slave_SQL_Running || 'No') : '-',
+                      semiSync: isMaster ? 'ON' : 'OFF'
+                    };
+                  });
+              });
+          });
       })
       .catch((e) => {
         console.log('[DB Status] 103 失敗:', e.message);
         return {
           host: '192.168.10.103',
           status: 'DOWN',
-          role: 'UNKNOWN',
+          isMaster: false,
+          isSlave: false,
           error: e.message
         };
       });
 
     const [db1, db2] = await Promise.all([db1P, db2P]);
 
-    // 主庫を特定 - currentMaster設定で決定、クエリ結果に依存しない
-    // db1 = 192.168.10.102 (master設定), db2 = 192.168.10.103 (slave設定)
+    // Rpl_semi_sync_master_status=ON がマスター、Rpl_semi_sync_slave_status=ON がスレーブ
     let master, slave;
-    if (currentMaster === 'master') {
+    if (db1.isMaster && !db2.isMaster) {
+      // db1がマスター
       master = db1;
       slave = db2;
-    } else {
+    } else if (db2.isMaster && !db1.isMaster) {
+      // db2がマスター
       master = db2;
       slave = db1;
-    }
-
-    // 自動切替：主庫がダウンした場合、从庫に切替
-    if (master.status === 'DOWN' && currentMaster === 'master') {
-      console.log(`[DB Status] 主庫 ${master.host} 故障、自動的に从庫に切替`);
-      currentMaster = 'slave';
+    } else if (db1.isMaster && db2.isMaster) {
+      // 両方マスター（dual-master）
+      // currentMaster設定で決定
+      if (currentMaster === 'master') {
+        master = db1;
+        slave = db2;
+      } else {
+        master = db2;
+        slave = db1;
+      }
+    } else {
+      // どちらもマスターでない場合（古い設定など）
+      master = db1;
+      slave = db2;
     }
 
     res.json({
