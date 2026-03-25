@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>バッチ管理 | RMS</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f5f6f8;
+}
+.main {
+    margin-left: 220px;
+    padding: 20px;
+}
+.section {
+    background: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.section h3 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+label {
+    display: inline-block;
+    margin-right: 10px;
+}
+input[type="number"] {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    width: 80px;
+}
+.warning {
+    color: red;
+    font-weight: bold;
+    margin-left: 15px;
+    display: inline-block;
+    min-width: 200px;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+th, td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
+th {
+    background-color: #f0f0f0;
+    font-weight: 600;
+}
+tr:hover {
+    background-color: #fafafa;
+}
+.status-wait {
+    color: orange;
+    font-weight: bold;
+}
+.status-sent {
+    color: blue;
+    font-weight: bold;
+}
+.status-finish {
+    color: green;
+    font-weight: bold;
+}
+.status-working {
+    color: #17a2b8;
+    font-weight: bold;
+}
+.status-error {
+    color: red;
+    font-weight: bold;
+}
+.link-btn {
+    color: #ff8c00;
+    cursor: pointer;
+    text-decoration: underline;
+}
+.link-btn:hover {
+    color: #e67e00;
+}
+.search-bar {
+    background: white;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.search-bar label {
+    font-weight: normal;
+    color: #666;
+    font-size: 14px;
+}
+.search-bar input, .search-bar select {
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    width: 150px;
+}
+.search-bar .button-search {
+    background: #666;
+    color: white;
+    padding: 6px 15px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.search-bar .button-search:hover {
+    opacity: 0.8;
+}
+.search-bar .button-reset {
+    background: #ddd;
+    color: #333;
+    padding: 6px 15px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.param-row {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 10px;
+}
+.param-label {
+    width: 180px;
+}
+.param-btn {
+    background: #ff8c00;
+    color: white;
+    border: none;
+    padding: 6px 15px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 20px;
+}
+.param-btn:hover {
+    opacity: 0.8;
+}
+.manual-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+.manual-btn:hover {
+    opacity: 0.8;
+}
+.manual-btn.green {
+    background: #28a745;
+}
+/* Popup Modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 150px;
+}
+.modal-overlay.active {
+    display: flex;
+}
+.modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    min-width: 350px;
+}
+.modal-content h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+}
+.modal-content p {
+    margin-bottom: 10px;
+    color: #666;
+}
+.modal-content #modalCount {
+    margin-bottom: 20px;
+}
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+.modal-btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.modal-btn.confirm {
+    background: #ff8c00;
+    color: white;
+}
+.modal-btn.cancel {
+    background: #ddd;
+    color: #333;
+}
+.modal-btn:hover {
+    opacity: 0.8;
+}
+/* 异常警示条 */
+.exception-alert-bar { display: none; position: fixed; top: 0; left: 220px; right: 0; background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 6px 15px; z-index: 1000; cursor: pointer; box-shadow: 0 2px 10px rgba(220, 53, 69, 0.4); font-size: 13px; }
+.exception-alert-bar.show { display: flex; align-items: center; justify-content: space-between; }
+.exception-alert-content { display: flex; align-items: center; gap: 10px; }
+.exception-alert-count { background: white; color: #dc3545; padding: 1px 6px; border-radius: 10px; font-weight: bold; font-size: 12px; margin: 0 5px; }
+.exception-alert-close { font-size: 12px; cursor: pointer; position: absolute; top: 3px; left: 8px; }
+.exception-alert-close:hover { opacity: 0.7; }
+</style>
+
+<script>
+function validateInterval(){
+    var val = document.getElementById("polling").value;
+    var warn = document.getElementById("intervalWarn");
+
+    if(val < 5){
+        warn.textContent = "⚠ 5秒未満は性能に影響する可能性があります";
+    } else if(val > 10){
+        warn.textContent = "⚠ 10秒超は業務遅延の可能性があります";
+    } else {
+        warn.textContent = "";
+    }
+}
+
+function openPopup(){
+    var left = (window.innerWidth - 500) / 2;
+    window.open("workstation_popup.html","popup","width=500,height=400,top=150,left=" + left);
+}
+
+function openConfirmPopup(type) {
+    var modal = document.getElementById('confirmModal');
+    var title = document.getElementById('modalTitle');
+    var message = document.getElementById('modalMessage');
+    var confirmBtn = document.getElementById('modalConfirmBtn');
+    var countSpan = document.getElementById('modalCount');
+
+    if (type === 'fetch') {
+        var interval = document.getElementById('polling').value;
+        title.textContent = '手動読み取り確認';
+        message.textContent = 'WMSからデータを読み取ります。よろしいですか？';
+        countSpan.textContent = interval + '秒';
+        confirmBtn.onclick = function() {
+            alert(interval + '秒間隔でデータを読み取りました');
+            closeModal();
+        };
+    } else if (type === 'send') {
+        var count = document.getElementById('rcsLimit').value;
+        title.textContent = '手動送信確認';
+        message.textContent = 'データをRCSに送信します。よろしいですか？';
+        countSpan.textContent = count + '件';
+        confirmBtn.onclick = function() {
+            alert(count + '件のデータを送信しました');
+            closeModal();
+        };
+    }
+
+    modal.classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('confirmModal').classList.remove('active');
+}
+
+function filterTable() {
+    var batch = document.getElementById('searchBatch').value.toLowerCase();
+    var wmsStatus = document.getElementById('searchWMSStatus').value;
+    var rcsStatus = document.getElementById('searchRCSStatus').value;
+    var rows = document.querySelectorAll('#batchTable tbody tr');
+
+    rows.forEach(function(row) {
+        var cells = row.querySelectorAll('td');
+        var rowBatch = cells[0].textContent.toLowerCase();
+        var rowWMSStatus = cells[2].textContent;
+        var rowRCSStatus = cells[3].textContent;
+
+        var match = (batch === '' || rowBatch.indexOf(batch) !== -1) &&
+                      (wmsStatus === '' || rowWMSStatus.indexOf(wmsStatus) !== -1) &&
+                      (rcsStatus === '' || rowRCSStatus.indexOf(rcsStatus) !== -1);
+
+        row.style.display = match ? '' : 'none';
+    });
+}
+
+function resetFilter() {
+    document.getElementById('searchBatch').value = '';
+    document.getElementById('searchWMSStatus').value = '';
+    document.getElementById('searchRCSStatus').value = '';
+    filterTable();
+}
+// 检查未确认异常并显示警示条
+function checkUnacknowledgedExceptions() {
+    var stored = localStorage.getItem('rcs_exceptions');
+    if (!stored) {
+        var defaultExceptions = [
+            {id: 1, severity: 'CRITICAL', code: 'EX_HEARTBEAT_LOST', target: 'EQUIPMENT (EQ-001)', description: '設備心拍が10分以上未更新', count: 12, lastOccurrence: '2026-02-15 21:48:02', status: 'OPEN'},
+            {id: 2, severity: 'ERROR', code: 'EX_CONTAINER_DUPLICATE', target: 'LOCATION (LOC-003)', description: '同一ロケーションに複数コンテナ', count: 3, lastOccurrence: '2026-02-15 20:20:11', status: 'ACK'},
+            {id: 3, severity: 'WARN', code: 'EX_BATTERY_LOW', target: 'EQUIPMENT (EQ-002)', description: '設備バッテリー残量低下', count: 1, lastOccurrence: '2026-02-15 19:45:33', status: 'OPEN'},
+            {id: 4, severity: 'INFO', code: 'EX_MAINTENANCE_DUE', target: 'RACK (SH-001)', description: '定期メンテナンス予定', count: 1, lastOccurrence: '2026-02-15 18:00:00', status: 'RESOLVED'}
+        ];
+        localStorage.setItem('rcs_exceptions', JSON.stringify(defaultExceptions));
+    }
+    var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+    var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+    // 检查是否有 ERROR 或 CRITICAL 级别的未确认异常
+    var criticalErrors = exceptions.filter(function(e) {
+        return e.status === 'OPEN' && (e.severity === 'CRITICAL' || e.severity === 'ERROR');
+    });
+    var alertBar = document.getElementById('exceptionAlertBar');
+    var alertCount = document.getElementById('exceptionAlertCount');
+    // 有未确认异常时显示警告条
+    if (unacknowledged.length > 0 && alertBar && alertCount) {
+        alertCount.textContent = unacknowledged.length;
+        alertBar.classList.add('show');
+    }
+    // 有 ERROR 或 CRITICAL 时，强制显示警告条（不可关闭）
+    if (criticalErrors.length > 0 && alertBar) {
+        alertBar.classList.add('show');
+    }
+}
+checkUnacknowledgedExceptions();
+
+window.addEventListener('DOMContentLoaded', function() {
+    checkUnacknowledgedExceptions();
+});
+</script>
+</head>
+<body>
+
+<!-- 异常警示条 -->
+<div class="exception-alert-bar" id="exceptionAlertBar" onclick="location.href='exception_list.html'">
+    <div class="exception-alert-content">
+        <span>⚠️</span>
+        <span>未確認の例外があります</span>
+        <span class="exception-alert-count" id="exceptionAlertCount">0</span>
+        <span>件</span>
+    </div>
+    <span>クリックして詳細へ →</span>
+</div>
+
+<!-- 左侧导航 -->
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<!-- 确认弹窗 -->
+<div id="confirmModal" class="modal-overlay">
+    <div class="modal-content">
+        <h4 id="modalTitle">確認</h4>
+        <p id="modalMessage">実行します。よろしいですか？</p>
+        <p id="modalCount" style="font-size: 18px; font-weight: bold; color: #ff8c00;"></p>
+        <div class="modal-buttons">
+            <button class="modal-btn cancel" onclick="closeModal()">キャンセル</button>
+            <button class="modal-btn confirm" id="modalConfirmBtn">実行</button>
+        </div>
+    </div>
+</div>
+
+<div class="main">
+
+<!-- バッチ一覧 -->
+<div class="section">
+<h3>バッチ一覧</h3>
+
+<div class="search-bar">
+<label>バッチID:</label>
+<input type="text" id="searchBatch" placeholder="バッチIDを入力">
+<label>WMS状態:</label>
+<select id="searchWMSStatus">
+<option value="">すべて</option>
+<option value="ALLOCATED">ALLOCATED</option>
+<option value="STARTED">STARTED</option>
+<option value="FINISHED">FINISHED</option>
+</select>
+<label>RCS状態:</label>
+<select id="searchRCSStatus">
+<option value="">すべて</option>
+<option value="未送信">未送信</option>
+<option value="送信済">送信済</option>
+<option value="進行中">進行中</option>
+<option value="完了">完了</option>
+<option value="ERROR">ERROR</option>
+</select>
+<button class="button-search" onclick="filterTable()">検索</button>
+<button class="button-reset" onclick="resetFilter()">リセット</button>
+</div>
+
+<table id="batchTable">
+<thead>
+<tr>
+<th>バッチID</th>
+<th>タスク数</th>
+<th>WMS状態</th>
+<th>RCS状態</th>
+<th>読取時間</th>
+<th>作業開始時間</th>
+<th>作業完了時間</th>
+</tr>
+</thead>
+
+<tbody>
+
+<tr>
+<td>BATCH-001</td>
+<td>3</td>
+<td>ALLOCATED</td>
+<td class="status-wait">未送信</td>
+<td>2026-03-10 08:30:00</td>
+<td>-</td>
+<td>-</td>
+</tr>
+
+<tr>
+<td>BATCH-002</td>
+<td>5</td>
+<td>STARTED</td>
+<td class="status-sent">送信済</td>
+<td>2026-03-10 08:25:00</td>
+<td>2026-03-10 08:35:00</td>
+<td>-</td>
+</tr>
+
+<tr>
+<td>BATCH-003</td>
+<td>4</td>
+<td>FINISHED</td>
+<td class="status-finish">完了</td>
+<td>2026-03-10 08:20:00</td>
+<td>2026-03-10 08:22:00</td>
+<td>2026-03-10 08:40:00</td>
+</tr>
+
+<tr>
+<td>BATCH-004</td>
+<td>6</td>
+<td>ALLOCATED</td>
+<td class="status-error">ERROR</td>
+<td>2026-03-10 08:15:00</td>
+<td>-</td>
+<td>-</td>
+</tr>
+
+</tbody>
+</table>
+
+</div>
+
+</div>
+
+</body>
+</html>

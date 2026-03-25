@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ゾーン詳細 | RMS</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f6f8;
+}
+.main {
+    margin-left: 220px;
+    padding: 20px;
+}
+.main h2 {
+    margin: 0 0 20px 0;
+    color: #333;
+}
+.form-container {
+    background: white;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.form-group {
+    margin-bottom: 15px;
+}
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+input, select, textarea {
+    width: 300px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+.button {
+    background: #ff8c00;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    margin-right: 10px;
+}
+.button:hover {
+    opacity: 0.8;
+}
+.button-secondary {
+    background: #6c757d;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+}
+.button-secondary:hover {
+    background: #5a6268;
+}
+/* 異常警示条 */
+.exception-alert-bar { display: none; position: fixed; top: 0; left: 220px; right: 0; background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 6px 15px; z-index: 1000; cursor: pointer; box-shadow: 0 2px 10px rgba(220, 53, 69, 0.4); font-size: 13px; }
+.exception-alert-bar.show { display: flex; align-items: center; justify-content: space-between; }
+.exception-alert-content { display: flex; align-items: center; gap: 10px; }
+.exception-alert-count { background: white; color: #dc3545; padding: 1px 6px; border-radius: 10px; font-weight: bold; font-size: 12px; margin: 0 5px; }
+.exception-alert-close { font-size: 12px; cursor: pointer; position: absolute; top: 3px; left: 8px; }
+.exception-alert-close:hover { opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<!-- 異常警示条 -->
+<div class="exception-alert-bar" id="exceptionAlertBar" onclick="location.href='exception_list.html'">
+    <div class="exception-alert-content">
+        <span>⚠️</span>
+        <span>未確認の例外があります</span>
+        <span class="exception-alert-count" id="exceptionAlertCount">0</span>
+        <span>件</span>
+    </div>
+    <span>クリックして詳細へ →</span>
+</div>
+
+<!-- 左側ナビゲーション -->
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<div class="main">
+<h2>ゾーン詳細</h2>
+
+<div class="form-container" id="zoneForm">
+
+<div class="form-group">
+<label>ゾーンコード</label>
+<input type="text" id="zone_code" value="">
+</div>
+
+<div class="form-group">
+<label>ゾーン名称</label>
+<input type="text" id="zone_name" value="">
+</div>
+
+<div class="form-group">
+<label>優先度</label>
+<input type="number" id="priority" value="1" min="1">
+</div>
+
+<div class="form-group">
+<label>説明</label>
+<textarea id="description" rows="3"></textarea>
+</div>
+
+<div class="form-group">
+<label>状態</label>
+<select id="status">
+<option value="ACTIVE">ACTIVE</option>
+<option value="STOP">STOP</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>有効フラグ</label>
+<select id="enabled">
+<option value="1">有効</option>
+<option value="0">無効</option>
+</select>
+</div>
+
+<button class="button" onclick="saveZone()">保存</button>
+<button class="button-secondary" onclick="location.href='zone_list.html'">戻る</button>
+<button class="button" style="background:#dc3545; margin-left:10px;" onclick="deleteZone()" id="deleteBtn" style="display:none;">削除</button>
+
+</div>
+</div>
+
+<script>
+// 未確認異常を確認して警示条を表示
+function checkUnacknowledgedExceptions() {
+    var stored = localStorage.getItem('rcs_exceptions');
+    if (!stored) {
+        var defaultExceptions = [
+            {id: 1, severity: 'CRITICAL', code: 'EX_HEARTBEAT_LOST', target: 'EQUIPMENT (EQ-001)', description: '設備心拍が10分以上未更新', count: 12, lastOccurrence: '2026-02-15 21:48:02', status: 'OPEN'},
+            {id: 2, severity: 'ERROR', code: 'EX_CONTAINER_DUPLICATE', target: 'LOCATION (LOC-003)', description: '同一ロケーションに複数コンテナ', count: 3, lastOccurrence: '2026-02-15 20:20:11', status: 'ACK'},
+            {id: 3, severity: 'WARN', code: 'EX_BATTERY_LOW', target: 'EQUIPMENT (EQ-002)', description: '設備バッテリー残量低下', count: 1, lastOccurrence: '2026-02-15 19:45:33', status: 'OPEN'},
+            {id: 4, severity: 'INFO', code: 'EX_MAINTENANCE_DUE', target: 'RACK (SH-001)', description: '定期メンテナンス予定', count: 1, lastOccurrence: '2026-02-15 18:00:00', status: 'RESOLVED'}
+        ];
+        localStorage.setItem('rcs_exceptions', JSON.stringify(defaultExceptions));
+    }
+    var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+    var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+    // ERRORまたはCRITICALレベルの未確認異常があるか確認
+    var criticalErrors = exceptions.filter(function(e) {
+        return e.status === 'OPEN' && (e.severity === 'CRITICAL' || e.severity === 'ERROR');
+    });
+    var alertBar = document.getElementById('exceptionAlertBar');
+    var alertCount = document.getElementById('exceptionAlertCount');
+    // 未確認異常がある場合、警告条を表示
+    if (unacknowledged.length > 0 && alertBar && alertCount) {
+        alertCount.textContent = unacknowledged.length;
+        alertBar.classList.add('show');
+    }
+    // ERRORまたはCRITICALがある場合、強制的に警告条を表示（閉じ不可）
+    if (criticalErrors.length > 0 && alertBar) {
+        alertBar.classList.add('show');
+    }
+}
+checkUnacknowledgedExceptions();
+
+// URLパラメータからIDを取得
+const urlParams = new URLSearchParams(window.location.search);
+const zoneId = urlParams.get('id');
+
+// ページ読み込み時にデータを取得
+window.onload = async function() {
+    if (zoneId) {
+        // 編集モード - 既存のデータを取得
+        document.getElementById('deleteBtn').style.display = 'inline-block';
+        document.querySelector('h2').textContent = 'ゾーン編集';
+
+        try {
+            const response = await fetch(`/api/zones/${zoneId}`);
+            const zone = await response.json();
+            document.getElementById('zone_code').value = zone.zone_code;
+            document.getElementById('zone_name').value = zone.zone_name;
+            document.getElementById('priority').value = zone.priority;
+            document.getElementById('description').value = zone.description || '';
+            document.getElementById('status').value = zone.status;
+            document.getElementById('enabled').value = zone.enabled ? '1' : '0';
+        } catch (error) {
+            alert('データの読み込みに失敗しました: ' + error);
+        }
+    } else {
+        // 新規作成モード
+        document.querySelector('h2').textContent = 'ゾーン新規作成';
+        document.getElementById('deleteBtn').style.display = 'none';
+    }
+};
+
+// ゾーン保存
+async function saveZone() {
+    const zoneData = {
+        zone_code: document.getElementById('zone_code').value,
+        zone_name: document.getElementById('zone_name').value,
+        priority: parseInt(document.getElementById('priority').value) || 0,
+        description: document.getElementById('description').value,
+        status: document.getElementById('status').value,
+        enabled: document.getElementById('enabled').value === '1'
+    };
+
+    if (!zoneData.zone_code || !zoneData.zone_name) {
+        alert('ゾーンコードとゾーン名称は必須です');
+        return;
+    }
+
+    try {
+        let response;
+        if (zoneId) {
+            // 更新処理
+            response = await fetch(`/api/zones/${zoneId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(zoneData)
+            });
+        } else {
+            // 新規作成
+            response = await fetch('/api/zones', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(zoneData)
+            });
+        }
+
+        if (response.ok) {
+            alert('保存しました');
+            location.href = 'zone_list.html';
+        } else {
+            const error = await response.json();
+            alert('保存に失敗しました: ' + error.error);
+        }
+    } catch (error) {
+        alert('保存に失敗しました: ' + error);
+    }
+}
+
+// ゾーン削除
+async function deleteZone() {
+    if (!zoneId) return;
+
+    if (!confirm('このゾーンを削除しますか？')) return;
+
+    try {
+        const response = await fetch(`/api/zones/${zoneId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            alert('削除しました');
+            location.href = 'zone_list.html';
+        } else {
+            const error = await response.json();
+            alert('削除に失敗しました: ' + error.error);
+        }
+    } catch (error) {
+        alert('削除に失敗しました: ' + error);
+    }
+}
+</script>
+
+</body>
+</html>

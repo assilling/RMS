@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Sidebar</title>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: linear-gradient(#1f2a40, #243b55);
+}
+.sidebar {
+    width: 220px;
+    height: 100vh;
+    background: linear-gradient(#1f2a40, #243b55);
+    color: white;
+}
+.sidebar h2 {
+    padding: 20px;
+    margin: 0;
+    font-size: 28px;
+    font-weight: bold;
+    color: #ff8c00;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+.sidebar a {
+    display: block;
+    padding: 12px 20px;
+    color: white;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+.sidebar a:hover,
+.sidebar a.active {
+    background-color: #ff8c00;
+}
+.exception-badge {
+    float: right;
+    background: red;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: bold;
+}
+</style>
+</head>
+<body>
+<div class="sidebar">
+    <h2>RMS</h2>
+    <a href="wave_management.html" target="_top" id="nav-wave">バッチ管理</a>
+    <a href="task_management.html" target="_top" id="nav-task">タスク管理</a>
+    <a href="system_settings.html" target="_top" id="nav-system">システムパラメータ設定</a>
+    <a href="zone_list.html" target="_top" id="nav-zone">ゾーン管理</a>
+    <a href="rack_list.html" target="_top" id="nav-shelf">棚管理</a>
+    <a href="container_list.html" target="_top" id="nav-container">コンテナ管理</a>
+    <a href="location_list.html" target="_top" id="nav-location">ロケーション管理</a>
+    <a href="equipment_list.html" target="_top" id="nav-equipment">設備管理</a>
+    <a href="exception_list.html" target="_top" id="nav-exception">
+        エクセプションモニター
+        <span class="exception-badge" id="exceptionBadge" style="display:none;">0</span>
+    </a>
+    <a href="db_monitor.html" target="_top" id="nav-db">データベース監視</a>
+</div>
+<script>
+    // 現在のページURLを取得し、対応するナビゲーション項目をマーク
+    var currentPage = window.location.href.split('/').pop() || 'rack_list.html';
+    var navMap = {
+        'zone_list.html': 'nav-zone',
+        'zone_detail.html': 'nav-zone',
+        'db_monitor.html': 'nav-db',
+        'rack_list.html': 'nav-shelf',
+        'rack_detail.html': 'nav-shelf',
+        'container_list.html': 'nav-container',
+        'container_detail.html': 'nav-container',
+        'wave_management.html': 'nav-wave',
+        'task_management.html': 'nav-task',
+        'system_settings.html': 'nav-system',
+        'location_list.html': 'nav-location',
+        'location_detail.html': 'nav-location',
+        'equipment_list.html': 'nav-equipment',
+        'equipment_detail.html': 'nav-equipment',
+        'exception_list.html': 'nav-exception',
+        'db_monitor.html': 'nav-db',
+        'exception_detail.html': 'nav-exception'
+    };
+    if (navMap[currentPage]) {
+        document.getElementById(navMap[currentPage]).classList.add('active');
+    }
+
+    // 異常バッジ数を更新
+    function updateExceptionBadge() {
+        var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+        var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+        var badge = document.getElementById('exceptionBadge');
+        if (badge) {
+            if (unacknowledged.length > 0) {
+                badge.textContent = unacknowledged.length;
+                badge.style.display = 'inline';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    // 異常データを初期化（存在しない場合）
+    function initExceptions() {
+        var stored = localStorage.getItem('rcs_exceptions');
+        if (!stored) {
+            var defaultExceptions = [
+                {id: 1, severity: 'CRITICAL', code: 'EX_HEARTBEAT_LOST', target: 'EQUIPMENT (EQ-001)', description: '設備心拍が10分以上未更新', count: 12, lastOccurrence: '2026-02-15 21:48:02', status: 'OPEN'},
+                {id: 2, severity: 'ERROR', code: 'EX_CONTAINER_DUPLICATE', target: 'LOCATION (LOC-003)', description: '同一ロケーションに複数コンテナ', count: 3, lastOccurrence: '2026-02-15 20:20:11', status: 'ACK'},
+                {id: 3, severity: 'WARN', code: 'EX_BATTERY_LOW', target: 'EQUIPMENT (EQ-002)', description: '設備バッテリー残量低下', count: 1, lastOccurrence: '2026-02-15 19:45:33', status: 'OPEN'},
+                {id: 4, severity: 'INFO', code: 'EX_MAINTENANCE_DUE', target: 'RACK (SH-001)', description: '定期メンテナンス予定', count: 1, lastOccurrence: '2026-02-15 18:00:00', status: 'RESOLVED'}
+            ];
+            localStorage.setItem('rcs_exceptions', JSON.stringify(defaultExceptions));
+        }
+    }
+
+    initExceptions();
+    updateExceptionBadge();
+
+    // 親ページに自動的に異常警示機能を追加 - setTimeoutで遅延実行
+    setTimeout(function() {
+        try {
+            var parentDoc = window.parent.document;
+            if (!parentDoc || parentDoc === window.document) return;
+
+            var parentBody = parentDoc.body;
+            if (!parentBody) return;
+
+            // 既に追加済みか確認
+            if (parentDoc.getElementById('exceptionAlertBar')) return;
+
+            // データベース監視ページには異常バナーを表示しない
+            if (window.location.href.indexOf('db_monitor') !== -1) return;
+
+            // 警示条スタイルを追加
+            var style = parentDoc.createElement('style');
+            style.textContent = '.exception-alert-bar{display:none;position:fixed;top:0;left:220px;right:0;background:linear-gradient(135deg,#dc3545,#c82333);color:white;padding:12px 20px;z-index:1000;cursor:pointer;box-shadow:0 2px 10px rgba(220,53,69,0.4)}.exception-alert-bar.show{display:flex;align-items:center;justify-content:space-between}.exception-alert-content{display:flex;align-items:center;gap:10px}.exception-alert-count{background:white;color:#dc3545;padding:2px 10px;border-radius:12px;font-weight:bold}';
+            parentDoc.head.appendChild(style);
+
+            // 警示条HTMLを追加
+            var alertBar = parentDoc.createElement('div');
+            alertBar.className = 'exception-alert-bar';
+            alertBar.id = 'exceptionAlertBar';
+            alertBar.onclick = function() { window.parent.location.href = 'exception_list.html'; };
+
+            var contentDiv = parentDoc.createElement('div');
+            contentDiv.className = 'exception-alert-content';
+
+            var warnIcon = parentDoc.createElement('span');
+            warnIcon.textContent = '⚠️';
+            var text = parentDoc.createElement('span');
+            text.textContent = '未確認の例外があります';
+            var countSpan = parentDoc.createElement('span');
+            countSpan.className = 'exception-alert-count';
+            countSpan.id = 'exceptionAlertCount';
+            countSpan.textContent = '0';
+            var unit = parentDoc.createElement('span');
+            unit.textContent = '件';
+
+            contentDiv.appendChild(warnIcon);
+            contentDiv.appendChild(text);
+            contentDiv.appendChild(countSpan);
+            contentDiv.appendChild(unit);
+
+            var rightText = parentDoc.createElement('span');
+            rightText.textContent = 'クリックして詳細へ →';
+
+            alertBar.appendChild(contentDiv);
+            alertBar.appendChild(rightText);
+            parentBody.insertBefore(alertBar, parentBody.firstChild);
+
+            // 警示条を確認して表示
+            function checkParentExceptions() {
+                // 先にデータを初期化
+                var stored = localStorage.getItem('rcs_exceptions');
+                if (!stored) {
+                    var defaultExceptions = [
+                        {id: 1, severity: 'CRITICAL', code: 'EX_HEARTBEAT_LOST', target: 'EQUIPMENT (EQ-001)', description: '設備心拍が10分以上未更新', count: 12, lastOccurrence: '2026-02-15 21:48:02', status: 'OPEN'},
+                        {id: 2, severity: 'ERROR', code: 'EX_CONTAINER_DUPLICATE', target: 'LOCATION (LOC-003)', description: '同一ロケーションに複数コンテナ', count: 3, lastOccurrence: '2026-02-15 20:20:11', status: 'ACK'},
+                        {id: 3, severity: 'WARN', code: 'EX_BATTERY_LOW', target: 'EQUIPMENT (EQ-002)', description: '設備バッテリー残量低下', count: 1, lastOccurrence: '2026-02-15 19:45:33', status: 'OPEN'},
+                        {id: 4, severity: 'INFO', code: 'EX_MAINTENANCE_DUE', target: 'RACK (SH-001)', description: '定期メンテナンス予定', count: 1, lastOccurrence: '2026-02-15 18:00:00', status: 'RESOLVED'}
+                    ];
+                    localStorage.setItem('rcs_exceptions', JSON.stringify(defaultExceptions));
+                }
+
+                var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+                var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+                var parentAlertBar = parentDoc.getElementById('exceptionAlertBar');
+                var parentAlertCount = parentDoc.getElementById('exceptionAlertCount');
+                if (unacknowledged.length > 0 && parentAlertBar && parentAlertCount) {
+                    parentAlertCount.textContent = unacknowledged.length;
+                    parentAlertBar.classList.add('show');
+                }
+            }
+            checkParentExceptions();
+
+            // 更新関数を親ページに公開
+            window.parent.updateExceptionBadge = updateExceptionBadge;
+        } catch(e) {
+            console.log('Exception alert setup:', e);
+        }
+    }, 100);
+</script>
+</body>
+</html>

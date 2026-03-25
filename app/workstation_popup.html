@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>作業台選択</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    background-color: #f5f6f8;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+h3 {
+    margin-top: 0;
+    color: #333;
+    width: 100%;
+    max-width: 500px;
+}
+table {
+    width: 100%;
+    max-width: 500px;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+th, td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
+th {
+    background-color: #f0f0f0;
+    font-weight: 600;
+}
+.status-active {
+    color: green;
+    font-weight: bold;
+}
+.status-blocked {
+    color: red;
+    font-weight: bold;
+}
+button {
+    background-color: #ff8c00;
+    color: white;
+    border: none;
+    padding: 6px 15px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+button:hover {
+    opacity: 0.8;
+}
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+</style>
+
+<script>
+function selectWorkstation(code, name) {
+    if (window.opener && !window.opener.closed) {
+        window.opener.document.getElementById('selectedStation').value = code + ' - ' + name;
+    }
+    window.close();
+}
+</script>
+</head>
+<body>
+
+<h3>作業台選択</h3>
+
+<table>
+<tr>
+<th>設備コード</th>
+<th>名称</th>
+<th>状態</th>
+<th>選択</th>
+</tr>
+
+<tr>
+<td>ST-01</td>
+<td>作業台1</td>
+<td class="status-active">ACTIVE</td>
+<td><button onclick="selectWorkstation('ST-01', '作業台1')">選択</button></td>
+</tr>
+
+<tr>
+<td>ST-02</td>
+<td>作業台2</td>
+<td class="status-active">ACTIVE</td>
+<td><button onclick="selectWorkstation('ST-02', '作業台2')">選択</button></td>
+</tr>
+
+<tr>
+<td>ST-03</td>
+<td>作業台3</td>
+<td class="status-blocked">BLOCKED</td>
+<td>-</td>
+</tr>
+
+<tr>
+<td>ST-04</td>
+<td>作業台4</td>
+<td class="status-active">ACTIVE</td>
+<td><button onclick="selectWorkstation('ST-04', '作業台4')">選択</button></td>
+</tr>
+
+</table>
+
+</body>
+</html>

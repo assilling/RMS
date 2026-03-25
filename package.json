@@ -1,0 +1,15 @@
+{
+  "name": "rcs-app",
+  "version": "1.0.0",
+  "description": "RCS MySQL Failover Demo",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "cors": "^2.8.5"
+  }
+}

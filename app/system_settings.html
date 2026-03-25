@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>システムパラメータ設定 | RMS</title>
+<style>
+body { margin: 0; font-family: Arial, sans-serif; background-color: #f5f6f8; }
+.main { margin-left: 220px; padding: 20px; min-height: 100vh; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header h2 { margin: 0; color: #333; }
+.section { background: white; padding: 20px; margin-bottom: 15px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section h3 { margin: 0 0 15px 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+.param-row { display: flex; align-items: center; margin-bottom: 15px; }
+.param-label { width: 200px; font-weight: bold; color: #333; }
+.param-row input[type="number"] { padding: 6px 10px; border: 1px solid #ddd; border-radius: 3px; width: 100px; }
+.param-btn { background: #007bff; color: white; padding: 6px 15px; border: none; border-radius: 3px; cursor: pointer; margin-left: 10px; }
+.param-btn:hover { background: #0056b3; }
+.manual-btn { background: #6c757d; color: white; padding: 6px 15px; border: none; border-radius: 3px; cursor: pointer; margin-right: 10px; }
+.manual-btn:hover { background: #5a6268; }
+.manual-btn.green { background: #28a745; }
+.manual-btn.green:hover { background: #218838; }
+.warning { color: red; font-size: 12px; }
+/* 出庫ステーションタスク設定 */
+.station-table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+.station-table th { background: #e8f4fd; color: #333; font-weight: 600; padding: 12px 8px; border: 1px solid #cfe2f3; text-align: center; }
+.station-table td { border: 1px solid #e0e0e0; padding: 8px; text-align: center; vertical-align: middle; }
+.station-table th:nth-child(1) { width: 20%; } /* Station名称 */
+.station-table th:nth-child(2) { width: 20%; } /* Location ID */
+.station-table th:nth-child(3) { width: 15%; } /* 現在の設定数 */
+.station-table th:nth-child(4) { width: 45%; } /* タスク数設定 */
+.station-name { text-align: left !important; font-weight: 600; color: #1a73e8; }
+.station-location { font-family: monospace; color: #666; }
+.station-current { font-weight: bold; color: #d63384; font-size: 16px; }
+.station-numbers { display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: nowrap; }
+.station-num-btn { min-width: 36px; height: 36px; padding: 0 8px; border: 1px solid #ced4da; background: #f8f9fa; cursor: pointer; border-radius: 4px; font-weight: 600; font-size: 14px; color: #495057; transition: all 0.15s; }
+.station-num-btn:hover { background: #e9ecef; border-color: #adb5bd; }
+.station-num-btn.selected { background: #198754; color: white; border-color: #198754; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+.station-custom-wrap { display: flex; align-items: center; gap: 4px; margin-left: 8px; padding-left: 8px; border-left: 1px solid #dee2e6; }
+.station-custom-input { width: 55px; height: 36px; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: 14px; }
+.station-custom-input:focus { outline: none; border-color: #86b7fe; box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15); }
+.station-confirm-btn { background: #0d6efd; color: white; padding: 10px 30px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin-top: 20px; transition: background 0.2s; }
+.station-confirm-btn:hover { background: #0b5ed7; }
+/* 异常警示条 */
+.exception-alert-bar { display: none; position: fixed; top: 0; left: 220px; right: 0; background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 6px 15px; z-index: 1000; cursor: pointer; box-shadow: 0 2px 10px rgba(220, 53, 69, 0.4); font-size: 13px; }
+.exception-alert-bar.show { display: flex; align-items: center; justify-content: space-between; }
+.exception-alert-content { display: flex; align-items: center; gap: 10px; }
+.exception-alert-count { background: white; color: #dc3545; padding: 1px 6px; border-radius: 10px; font-weight: bold; font-size: 12px; margin: 0 5px; }
+</style>
+</head>
+<body>
+
+<!-- 异常警示条 -->
+<div class="exception-alert-bar" id="exceptionAlertBar" onclick="window.location.href='exception_list.html'">
+    <div class="exception-alert-content">
+        <span>⚠️</span>
+        <span>未確認の例外があります</span>
+        <span class="exception-alert-count" id="exceptionAlertCount">0</span>
+        <span>件</span>
+    </div>
+    <span>クリックして詳細へ →</span>
+</div>
+
+<!-- 左侧导航 -->
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<div class="main">
+
+<div class="header">
+<h2>システムパラメータ設定</h2>
+</div>
+
+<!-- パラメータ設定 -->
+<div class="section">
+<h3>システムパラメータ</h3>
+
+<div class="param-row">
+    <span class="param-label">WMS読取間隔（秒）:</span>
+    <input type="number" id="polling" value="5" onchange="validateInterval()">
+    <button class="param-btn" onclick="alert('WMS読取間隔を設定しました')">確認</button>
+    <span id="intervalWarn" class="warning" style="margin-left: 15px;"></span>
+</div>
+
+<div class="param-row">
+    <span class="param-label">RCS送信件数上限:</span>
+    <input type="number" id="rcsLimit" value="4">
+    <button class="param-btn" onclick="alert('RCS送信件数上限を設定しました')">確認</button>
+</div>
+
+<div class="param-row">
+    <span class="param-label">手動操作:</span>
+    <button class="manual-btn" onclick="alert('手動読み取りを実行しました')">手動読み取り</button>
+    <button class="manual-btn green" onclick="alert('手動送信を実行しました')">手動送信</button>
+</div>
+</div>
+
+<!-- 出庫ステーションタスク設定 -->
+<div class="section">
+<h3>出庫ステーションタスク設定</h3>
+<table class="station-table">
+    <thead>
+        <tr>
+            <th>ステーション名称</th>
+            <th>ロケーションID<br><span style="font-weight:normal;font-size:11px;color:#888;">(ステーション位置)</span></th>
+            <th>現在の設定数</th>
+            <th>タスク数設定 (1-6 / 自由入力)</th>
+        </tr>
+    </thead>
+    <tbody id="stationTableBody">
+    </tbody>
+</table>
+<button class="station-confirm-btn" onclick="confirmStationSettings()">確認</button>
+</div>
+
+</div>
+
+<script>
+// 检查未确认异常并显示警示条
+function checkUnacknowledgedExceptions() {
+    var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+    var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+    // 检查是否有 ERROR 或 CRITICAL 级别的未确认异常
+    var criticalErrors = exceptions.filter(function(e) {
+        return e.status === 'OPEN' && (e.severity === 'CRITICAL' || e.severity === 'ERROR');
+    });
+    var alertBar = document.getElementById('exceptionAlertBar');
+    var alertCount = document.getElementById('exceptionAlertCount');
+
+    // 有未确认异常时显示警告条
+    if (unacknowledged.length > 0 && alertBar && alertCount) {
+        alertCount.textContent = unacknowledged.length;
+        alertBar.classList.add('show');
+    }
+    // 有 ERROR 或 CRITICAL 时，强制显示警告条（不可关闭）
+    if (criticalErrors.length > 0 && alertBar) {
+        alertBar.classList.add('show');
+    }
+}
+
+// 验证WMS读取间隔
+function validateInterval() {
+    var value = parseInt(document.getElementById('polling').value);
+    var warn = document.getElementById('intervalWarn');
+    if (value < 1) {
+        warn.textContent = '1秒以上に設定してください';
+        document.getElementById('polling').value = 1;
+    } else if (value > 60) {
+        warn.textContent = '60秒以内に設定してください';
+    } else {
+        warn.textContent = '';
+    }
+}
+
+// 出庫ステーション設定
+var stationData = [
+    { id: 1, name: 'AGV-ST-01', locationId: 'LOC-OUT-01', current: 0, pending: 0 },
+    { id: 2, name: 'AGV-ST-02', locationId: 'LOC-OUT-02', current: 0, pending: 0 },
+    { id: 3, name: 'AGV-ST-03', locationId: 'LOC-OUT-03', current: 0, pending: 0 },
+    { id: 4, name: 'AGV-ST-04', locationId: 'LOC-OUT-04', current: 0, pending: 0 },
+    { id: 5, name: 'AGV-ST-05', locationId: 'LOC-OUT-05', current: 0, pending: 0 },
+    { id: 6, name: 'AGV-ST-06', locationId: 'LOC-OUT-06', current: 0, pending: 0 }
+];
+
+// 初始化Station表格
+function initStationTable() {
+    // 从localStorage加载保存的设置
+    var saved = localStorage.getItem('station_settings');
+    if (saved) {
+        var savedData = JSON.parse(saved);
+        savedData.forEach(function(s) {
+            var station = stationData.find(function(st) { return st.id === s.id; });
+            if (station) {
+                station.current = s.current;
+                station.pending = s.pending;
+            }
+        });
+    }
+
+    var tbody = document.getElementById('stationTableBody');
+    tbody.innerHTML = '';
+
+    stationData.forEach(function(station) {
+        var tr = document.createElement('tr');
+
+        // Station名称
+        var nameTd = document.createElement('td');
+        nameTd.className = 'station-name';
+        nameTd.textContent = station.name;
+        tr.appendChild(nameTd);
+
+        // Location ID
+        var locTd = document.createElement('td');
+        locTd.className = 'station-location';
+        locTd.textContent = station.locationId;
+        tr.appendChild(locTd);
+
+        // 現在の設定数
+        var currentTd = document.createElement('td');
+        currentTd.className = 'station-current';
+        currentTd.id = 'station-current-' + station.id;
+        currentTd.textContent = station.current;
+        tr.appendChild(currentTd);
+
+        // タスク数設定
+        var numTd = document.createElement('td');
+
+        var numsDiv = document.createElement('div');
+        numsDiv.className = 'station-numbers';
+        numsDiv.id = 'station-nums-' + station.id;
+
+        // 生成1-6数字按钮
+        for (var i = 1; i <= 6; i++) {
+            (function(val) {
+                var btn = document.createElement('button');
+                btn.className = 'station-num-btn';
+                btn.textContent = val;
+                btn.onclick = function() { selectStationNumber(station.id, val); };
+                numsDiv.appendChild(btn);
+            })(i);
+        }
+        numTd.appendChild(numsDiv);
+
+        var customWrap = document.createElement('div');
+        customWrap.className = 'station-custom-wrap';
+
+        var customInput = document.createElement('input');
+        customInput.type = 'number';
+        customInput.className = 'station-custom-input';
+        customInput.id = 'station-custom-' + station.id;
+        customInput.placeholder = '-';
+        customInput.min = '1';
+        customInput.onchange = function() { handleCustomInput(station.id); };
+        customWrap.appendChild(customInput);
+
+        numTd.appendChild(customWrap);
+
+        tr.appendChild(numTd);
+
+        tbody.appendChild(tr);
+
+        // 更新按钮选中状态
+        updateStationButtons(station.id);
+    });
+}
+
+// 选择Station任务数
+function selectStationNumber(stationId, value) {
+    var station = stationData.find(function(s) { return s.id === stationId; });
+    if (station) {
+        station.pending = value;
+        // 清除自定义输入
+        document.getElementById('station-custom-' + stationId).value = '';
+        updateStationButtons(stationId);
+    }
+}
+
+// 处理自定义输入
+function handleCustomInput(stationId) {
+    var input = document.getElementById('station-custom-' + stationId);
+    var value = parseInt(input.value);
+    var station = stationData.find(function(s) { return s.id === stationId; });
+    if (station && value >= 1) {
+        station.pending = value;
+        // 清除数字按钮选中状态
+        var btns = document.querySelectorAll('#station-nums-' + stationId + ' .station-num-btn');
+        btns.forEach(function(btn) { btn.classList.remove('selected'); });
+    }
+}
+
+// 更新按钮选中状态
+function updateStationButtons(stationId) {
+    var station = stationData.find(function(s) { return s.id === stationId; });
+    if (!station) return;
+
+    var btns = document.querySelectorAll('#station-nums-' + stationId + ' .station-num-btn');
+    btns.forEach(function(btn) {
+        var val = parseInt(btn.textContent);
+        if (val === station.pending && station.pending <= 6) {
+            btn.classList.add('selected');
+        } else {
+            btn.classList.remove('selected');
+        }
+    });
+}
+
+// 确认Station设置
+function confirmStationSettings() {
+    var hasOver6 = false;
+    var changes = [];
+
+    stationData.forEach(function(station) {
+        if (station.pending > 0) {
+            if (station.pending > 6) {
+                hasOver6 = true;
+            }
+            changes.push(station.name + ': ' + station.current + ' → ' + station.pending);
+            station.current = station.pending;
+            // 更新显示
+            document.getElementById('station-current-' + station.id).textContent = station.current;
+        }
+    });
+
+    if (changes.length === 0) {
+        alert('設定を変更してください');
+        return;
+    }
+
+    // 检查是否有超过6的设置
+    if (hasOver6) {
+        var confirmed = confirm('警告：一部のStationで6以上の値が設定されています。\n' + changes.join('\n') + '\n\nこの設定でよろしいですか？');
+        if (!confirmed) return;
+    }
+
+    // 保存到localStorage
+    localStorage.setItem('station_settings', JSON.stringify(stationData));
+
+    alert('出庫ステーションタスク設定を更新しました');
+}
+
+// 页面加载时检查
+checkUnacknowledgedExceptions();
+initStationTable();
+</script>
+
+</body>
+</html>

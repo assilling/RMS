@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>データベース監視 | RMS</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f6f8;
+}
+.main {
+    margin-left: 220px;
+    padding: 20px;
+}
+.header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    align-items: center;
+}
+.header h2 { margin: 0; color: #333; }
+
+.db-status-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.db-server {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    flex: 1;
+    border-left: 5px solid #28a745;
+}
+
+.db-server.master { border-left-color: #28a745; }
+.db-server.slave { border-left-color: #007bff; }
+.db-server.down { border-left-color: #dc3545; }
+.db-server.primary { border-left-color: #ffc107; }
+
+.server-name {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+.server-ip {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+.server-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.server-details {
+    font-size: 13px;
+    color: #666;
+}
+.server-details div { margin: 5px 0; }
+
+.actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+.button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.button-primary { background: #007bff; color: white; }
+.button-danger { background: #dc3545; color: white; }
+.button-success { background: #28a745; color: white; }
+.button:hover { opacity: 0.8; }
+.button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<div class="main">
+<div class="header">
+<h2>データベース監視</h2>
+<button class="button button-primary" onclick="refreshStatus()">🔄 更新</button>
+</div>
+
+
+<div class="db-status-container">
+    <div class="db-server master" id="masterServer">
+        <div class="server-name">Master ( MASTER )</div>
+        <div class="server-ip" id="masterIP">192.168.10.102</div>
+        <div class="server-status">
+            <span id="masterStatus">確認中...</span>
+        </div>
+        <div class="server-details">
+            <div>役割: <span id="masterRole">SOURCE</span></div>
+            <div>Binlog: <span id="masterBinlog">-</span></div>
+            <div>Position: <span id="masterPos">-</span></div>
+            <div style="display:none;">遅延: <span id="masterLag">-</span></div>
+            <div style="display:none;">IO: <span id="masterIO">-</span></div>
+            <div style="display:none;">SQL: <span id="masterSQL">-</span></div>
+        </div>
+    </div>
+
+    <div class="db-server slave" id="slaveServer">
+        <div class="server-name">Slave ( REPLICA )</div>
+        <div class="server-ip" id="slaveIP">192.168.10.103</div>
+        <div class="server-status">
+            <span id="slaveStatus">確認中...</span>
+        </div>
+        <div class="server-details">
+            <div>役割: <span id="slaveRole">REPLICA</span></div>
+            <div>遅延: <span id="slaveLag">-</span></div>
+            <div>IO: <span id="slaveIO">-</span></div>
+            <div>SQL: <span id="slaveSQL">-</span></div>
+        </div>
+    </div>
+</div>
+
+<div class="actions">
+    <button class="button button-danger" onclick="stopMaster()" id="stopMasterBtn">⏹ 主庫停止 (danger!)</button>
+    <button class="button button-success" onclick="switchBack()" id="switchBackBtn">🔄 原主庫に戻す</button>
+    <button class="button button-primary" onclick="forceFailover()" id="forceFailoverBtn">⚡ 強制フェイルオーバー</button>
+</div>
+
+<div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
+    <h3>現在の接続: <span id="currentConnection" style="color: #007bff;">192.168.10.1 (Master)</span></h3>
+    <p style="color: #666; font-size: 13px;">
+        ※ 主庫を停止するとシステムは自動的に从庫に切り替わります。<br>
+        ※ 「原主庫に戻す」は主庫が復旧した後に使用してください。
+    </p>
+</div>
+</div>
+
+<script>
+// ページ読み込み後、異常バナーを削除
+window.onload = function() {
+    setTimeout(function() {
+        var alertBar = document.getElementById('exceptionAlertBar');
+        if (alertBar) {
+            alertBar.style.display = 'none';
+        }
+    }, 500);
+};
+
+// データベース状態を更新
+async function refreshStatus() {
+    try {
+        const response = await fetch('/api/db/status');
+        const data = await response.json();
+        updateUI(data);
+    } catch (error) {
+        showAlert('接続エラー: ' + error, 'error');
+    }
+}
+
+function updateUI(data) {
+    const masterDiv = document.getElementById('masterServer');
+    const slaveDiv = document.getElementById('slaveServer');
+
+    // マスター情報
+    document.getElementById('masterIP').textContent = data.master.host;
+    document.getElementById('masterStatus').textContent = data.master.status === 'UP' ? '正常' : '故障';
+    // マスター枠：固定SOURCE
+    document.getElementById('masterRole').textContent = 'SOURCE';
+
+    // マスター枠：显示Binlog信息
+    document.getElementById('masterBinlog').parentNode.style.display = 'block';
+    document.getElementById('masterPos').parentNode.style.display = 'block';
+    document.getElementById('masterLag').parentNode.style.display = 'none';
+    document.getElementById('masterIO').parentNode.style.display = 'none';
+    document.getElementById('masterSQL').parentNode.style.display = 'none';
+    document.getElementById('masterBinlog').textContent = data.master.binlog || '-';
+    document.getElementById('masterPos').textContent = data.master.position || '-';
+
+    // マスターの色：绿色边框
+    masterDiv.classList.remove('down');
+    masterDiv.classList.add('master');
+
+    // スレーブ情報
+    document.getElementById('slaveIP').textContent = data.slave.host;
+    document.getElementById('slaveStatus').textContent = data.slave.status === 'UP' ? '正常' : '故障';
+    // スレーブ枠：固定REPLICA
+    document.getElementById('slaveRole').textContent = 'REPLICA';
+
+    // スレーブ枠：显示复制状态
+    document.getElementById('slaveLag').parentNode.style.display = 'block';
+    document.getElementById('slaveIO').parentNode.style.display = 'block';
+    document.getElementById('slaveSQL').parentNode.style.display = 'block';
+
+    const lag = data.slave.secondsBehindMaster || 0;
+    document.getElementById('slaveLag').textContent = lag;
+    // 延迟 <= 1秒 绿色
+    document.getElementById('slaveLag').style.color = lag <= 1 ? '#28a745' : '#ffc107';
+    document.getElementById('slaveIO').textContent = data.slave.slaveIO || '-';
+    // IO Running Yes 绿色，No 红色
+    document.getElementById('slaveIO').style.color = data.slave.slaveIO === 'Yes' ? '#28a745' : '#dc3545';
+    document.getElementById('slaveSQL').textContent = data.slave.slaveSQL || '-';
+    // SQL Running Yes 绿色，No 红色
+    document.getElementById('slaveSQL').style.color = data.slave.slaveSQL === 'Yes' ? '#28a745' : '#dc3545';
+
+    // スレーブの色：蓝色边框
+    slaveDiv.classList.remove('down');
+    slaveDiv.classList.add('slave');
+
+    // 現在の接続
+    const currentHost = data.currentMaster === 'master' ? '192.168.10.102' : '192.168.10.103';
+    document.getElementById('currentConnection').textContent = `${currentHost} (${data.currentMaster === 'master' ? 'Master' : 'Master (自動切替)'})`;
+
+}
+
+// 主庫停止 - APIでSSHコマンドを実行
+async function stopMaster() {
+    // 先に現在の主庫状態を取得
+    try {
+        const statusRes = await fetch('/api/db/status');
+        const statusData = await statusRes.json();
+        const masterIP = statusData.master.host;
+
+        if (!confirm(`⚠️ 警告：主庫 (${masterIP}) の MySQL サービスを停止しますか？\n\nこれによりシステムが自動的に从庫に切りかわります。`)) {
+            return;
+        }
+
+        // 直接停止コマンドを実行
+        const response = await fetch('/api/db/stop-master-confirm', { method: 'POST' });
+        const result = await response.json();
+
+        if (result.success) {
+            alert('✅ MySQL 停止コマンド送信完了\n\n対象: ' + result.masterIP);
+        } else {
+            alert('❌ 停止失敗: ' + (result.error || '不明なエラー'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error);
+    }
+}
+
+// 強制failover - 完全な半同期切替流程
+async function forceFailover() {
+    if (!confirm('⚠️ 強制フェイルオーバーを実行しますか？\n\nこの操作は:\n1. 新しいマスター(192.168.10.103)で半同期を有効化\n2. 元のマスター(192.168.10.102)を起動\n3. 元のマスターを新しいマスターのスレーブに設定\n4. 半同期スレーブを有効化\n\n続行しますか？')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/db/force-failover', { method: 'POST' });
+        const result = await response.json();
+
+        if (result.success) {
+            let msg = '✅ フェイルオーバー完了！\n\n';
+            result.steps.forEach((step, i) => {
+                const status = step.status === 'success' ? '✓' : '✗';
+                msg += `${i+1}. ${step.name}: ${status}\n`;
+            });
+            alert(msg);
+            // 状態を更新
+            refreshStatus();
+        } else {
+            let msg = '❌ フェイルオーバー失敗\n\n';
+            result.steps.forEach((step, i) => {
+                const status = step.status === 'success' ? '✓' : '✗';
+                msg += `${i+1}. ${step.name}: ${status}`;
+                if (step.error) msg += ` (${step.error})`;
+                msg += '\n';
+            });
+            alert(msg);
+        }
+    } catch (error) {
+        alert('エラー: ' + error);
+    }
+}
+
+// 元主庫に戻す
+async function switchBack() {
+    try {
+        const response = await fetch('/api/db/switch-back', { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            refreshStatus();
+        }
+    } catch (error) {
+        alert('エラー: ' + error);
+    }
+}
+
+// 5秒ごとに自動更新
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

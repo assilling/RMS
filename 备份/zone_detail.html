@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ゾーン詳細 | RMS</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f6f8;
+}
+.main {
+    margin-left: 220px;
+    padding: 20px;
+}
+.main h2 {
+    margin: 0 0 20px 0;
+    color: #333;
+}
+.form-container {
+    background: white;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.form-group {
+    margin-bottom: 15px;
+}
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+input, select, textarea {
+    width: 300px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+.button {
+    background: #ff8c00;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    margin-right: 10px;
+}
+.button:hover {
+    opacity: 0.8;
+}
+.button-secondary {
+    background: #6c757d;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+}
+.button-secondary:hover {
+    background: #5a6268;
+}
+/* 异常警示条 */
+.exception-alert-bar { display: none; position: fixed; top: 0; left: 220px; right: 0; background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 6px 15px; z-index: 1000; cursor: pointer; box-shadow: 0 2px 10px rgba(220, 53, 69, 0.4); font-size: 13px; }
+.exception-alert-bar.show { display: flex; align-items: center; justify-content: space-between; }
+.exception-alert-content { display: flex; align-items: center; gap: 10px; }
+.exception-alert-count { background: white; color: #dc3545; padding: 1px 6px; border-radius: 10px; font-weight: bold; font-size: 12px; margin: 0 5px; }
+.exception-alert-close { font-size: 12px; cursor: pointer; position: absolute; top: 3px; left: 8px; }
+.exception-alert-close:hover { opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<!-- 异常警示条 -->
+<div class="exception-alert-bar" id="exceptionAlertBar" onclick="location.href='exception_list.html'">
+    <div class="exception-alert-content">
+        <span>⚠️</span>
+        <span>未確認の例外があります</span>
+        <span class="exception-alert-count" id="exceptionAlertCount">0</span>
+        <span>件</span>
+    </div>
+    <span>クリックして詳細へ →</span>
+</div>
+
+<!-- 左侧导航 -->
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<div class="main">
+<h2>ゾーン詳細</h2>
+
+<div class="form-container">
+
+<div class="form-group">
+<label>ゾーンコード</label>
+<input type="text" value="ZONE-01">
+</div>
+
+<div class="form-group">
+<label>ゾーン名称</label>
+<input type="text" value="出庫エリア">
+</div>
+
+<div class="form-group">
+<label>優先度</label>
+<input type="number" value="1" min="1">
+</div>
+
+<div class="form-group">
+<label>説明</label>
+<textarea rows="3">ピッキング専用ゾーン</textarea>
+</div>
+
+<div class="form-group">
+<label>状態</label>
+<select>
+<option>ACTIVE</option>
+<option>STOP</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>有効フラグ</label>
+<select>
+<option>有効</option>
+<option>無効</option>
+</select>
+</div>
+
+<button class="button">保存</button>
+<button class="button-secondary" onclick="location.href='zone_list.html'">戻る</button>
+
+</div>
+</div>
+
+<script>
+// 检查未确认异常并显示警示条
+function checkUnacknowledgedExceptions() {
+    var stored = localStorage.getItem('rcs_exceptions');
+    if (!stored) {
+        var defaultExceptions = [
+            {id: 1, severity: 'CRITICAL', code: 'EX_HEARTBEAT_LOST', target: 'EQUIPMENT (EQ-001)', description: '設備心拍が10分以上未更新', count: 12, lastOccurrence: '2026-02-15 21:48:02', status: 'OPEN'},
+            {id: 2, severity: 'ERROR', code: 'EX_CONTAINER_DUPLICATE', target: 'LOCATION (LOC-003)', description: '同一ロケーションに複数コンテナ', count: 3, lastOccurrence: '2026-02-15 20:20:11', status: 'ACK'},
+            {id: 3, severity: 'WARN', code: 'EX_BATTERY_LOW', target: 'EQUIPMENT (EQ-002)', description: '設備バッテリー残量低下', count: 1, lastOccurrence: '2026-02-15 19:45:33', status: 'OPEN'},
+            {id: 4, severity: 'INFO', code: 'EX_MAINTENANCE_DUE', target: 'RACK (SH-001)', description: '定期メンテナンス予定', count: 1, lastOccurrence: '2026-02-15 18:00:00', status: 'RESOLVED'}
+        ];
+        localStorage.setItem('rcs_exceptions', JSON.stringify(defaultExceptions));
+    }
+    var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+    var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+    // 检查是否有 ERROR 或 CRITICAL 级别的未确认异常
+    var criticalErrors = exceptions.filter(function(e) {
+        return e.status === 'OPEN' && (e.severity === 'CRITICAL' || e.severity === 'ERROR');
+    });
+    var alertBar = document.getElementById('exceptionAlertBar');
+    var alertCount = document.getElementById('exceptionAlertCount');
+    // 有未确认异常时显示警告条
+    if (unacknowledged.length > 0 && alertBar && alertCount) {
+        alertCount.textContent = unacknowledged.length;
+        alertBar.classList.add('show');
+    }
+    // 有 ERROR 或 CRITICAL 时，强制显示警告条（不可关闭）
+    if (criticalErrors.length > 0 && alertBar) {
+        alertBar.classList.add('show');
+    }
+}
+checkUnacknowledgedExceptions();
+</script>
+
+</body>
+</html>

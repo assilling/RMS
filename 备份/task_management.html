@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>タスク管理 | RMS</title>
+<style>
+body { margin: 0; font-family: Arial, sans-serif; background-color: #f5f6f8; }
+.main { margin-left: 220px; padding: 20px; }
+.section { background: white; padding: 20px; margin-bottom: 20px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section h3 { margin-top: 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+label { display: inline-block; margin-right: 10px; }
+input[type="text"] { padding: 6px 10px; border: 1px solid #ccc; border-radius: 3px; width: 120px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+th { background-color: #e8f4fd; color: #333; font-weight: 600; }
+tr:hover { background-color: #fafafa; }
+.search-bar { background: white; padding: 15px; margin-bottom: 15px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+.search-bar label { font-weight: normal; color: #666; font-size: 14px; }
+.search-bar input, .search-bar select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 3px; }
+.button-search { background: #666; color: white; padding: 6px 15px; border: none; border-radius: 3px; cursor: pointer; }
+.button-search:hover { opacity: 0.8; }
+.button-reset { background: #ddd; color: #333; padding: 6px 15px; border: none; border-radius: 3px; cursor: pointer; }
+
+/* 状态样式 */
+.status-wait { color: #fd7e14; font-weight: bold; }
+.status-sent { color: blue; font-weight: bold; }
+.status-finish { color: green; font-weight: bold; }
+.status-working { color: #17a2b8; font-weight: bold; }
+.status-error { color: red; font-weight: bold; }
+
+/* RMSタスクNo格子样式 - 左右都显示，当前位置高亮 */
+.rms-task-cell { display: flex; gap: 8px; }
+.rms-task-side { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.rms-task-side-label { font-size: 10px; color: #666; margin-bottom: 2px; }
+.rms-task-grid { display: flex; gap: 2px; }
+.rms-task-box {
+    width: 24px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+    border-radius: 2px;
+}
+/* 空位 */
+.rms-task-box.empty { background: #e9ecef; color: #adb5bd; }
+/* 当前位置 - 根据状态显示颜色 */
+.rms-task-box.pending { background: #fd7e14; color: white; }  /* 待機中-黄/橙 */
+.rms-task-box.working { background: #17a2b8; color: white; }  /* 進行中-蓝 */
+.rms-task-box.completed { background: #6c757d; color: white; }  /* 完了-灰 */
+.rms-task-box.error { background: #dc3545; color: white; }  /* ERROR-红 */
+.rms-task-box.unassigned { background: #e9ecef; color: #adb5bd; }  /* 未割当-浅灰 */
+
+/* 异常警示条 */
+.exception-alert-bar { display: none; position: fixed; top: 0; left: 220px; right: 0; background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 6px 15px; z-index: 1000; cursor: pointer; box-shadow: 0 2px 10px rgba(220, 53, 69, 0.4); font-size: 13px; }
+.exception-alert-bar.show { display: flex; align-items: center; justify-content: space-between; }
+.exception-alert-content { display: flex; align-items: center; gap: 10px; }
+.exception-alert-count { background: white; color: #dc3545; padding: 1px 6px; border-radius: 10px; font-weight: bold; font-size: 12px; margin: 0 5px; }
+</style>
+</head>
+<body>
+
+<!-- 异常警示条 -->
+<div class="exception-alert-bar" id="exceptionAlertBar" onclick="window.location.href='exception_list.html'">
+    <div class="exception-alert-content">
+        <span>⚠️</span>
+        <span>未確認の例外があります</span>
+        <span class="exception-alert-count" id="exceptionAlertCount">0</span>
+        <span>件</span>
+    </div>
+    <span>クリックして詳細へ →</span>
+</div>
+
+<!-- 左侧导航 -->
+<iframe src="sidebar.html" style="position:fixed; width:220px; height:100vh; border:none;" frameborder="0"></iframe>
+
+<div class="main">
+
+<div class="header">
+<h2>タスク管理</h2>
+</div>
+
+<!-- タスク一覧 -->
+<div class="section">
+<h3>タスク一覧</h3>
+
+<div class="search-bar">
+<label>バッチID:</label>
+<input type="text" id="searchBatch" placeholder="バッチIDを入力">
+<label>タスクID:</label>
+<input type="text" id="searchTask" placeholder="タスクIDを入力">
+<label>コンテナ:</label>
+<input type="text" id="searchContainer" placeholder="コンテナを入力">
+<label>ST番号:</label>
+<select id="searchST">
+<option value="">すべて</option>
+<option value="ST01">ST01</option>
+<option value="ST02">ST02</option>
+<option value="ST03">ST03</option>
+<option value="ST04">ST04</option>
+<option value="ST05">ST05</option>
+<option value="ST06">ST06</option>
+</select>
+<label>RMS状態:</label>
+<select id="searchRMSStatus">
+<option value="">すべて</option>
+<option value="未割当">未割当</option>
+<option value="待機中">待機中</option>
+<option value="進行中">進行中</option>
+<option value="完了">完了</option>
+<option value="ERROR">ERROR</option>
+</select>
+<button class="button-search" onclick="filterTable()">検索</button>
+<button class="button-reset" onclick="resetFilter()">リセット</button>
+</div>
+
+<table id="taskTable">
+<thead>
+<tr>
+<th>バッチ番号</th>
+<th>タスク番号</th>
+<th>RMS実施状態</th>
+<th>コンテナ番号</th>
+<th>ST番号</th>
+<th>RMSタスクNo</th>
+</tr>
+</thead>
+
+<tbody id="taskTableBody">
+</tbody>
+</table>
+
+</div>
+
+</div>
+
+<script>
+// Station設定データを読み込み（デフォルト値）
+function getStationSettings() {
+    var saved = localStorage.getItem('station_settings');
+    if (saved) {
+        return JSON.parse(saved);
+    }
+    // デフォルト設定: 各Station 6個（左右各3）
+    return [
+        { id: 1, name: 'AGV-ST-01', current: 6 },
+        { id: 2, name: 'AGV-ST-02', current: 6 },
+        { id: 3, name: 'AGV-ST-03', current: 6 },
+        { id: 4, name: 'AGV-ST-04', current: 6 },
+        { id: 5, name: 'AGV-ST-05', current: 6 },
+        { id: 6, name: 'AGV-ST-06', current: 6 }
+    ];
+}
+
+// Station名からIDを取得
+function getStationId(stName) {
+    var match = stName.match(/ST(\d+)/);
+    if (match) {
+        return parseInt(match[1]);
+    }
+    return null;
+}
+
+// Stationの左右タスク数を計算
+function getSideCapacity(total) {
+    var left = Math.floor(total / 2);
+    var right = total - left;
+    return { left: left, right: right };
+}
+
+// RMSタスクNoセルを生成（安全的DOM操作）
+// 左右两边的格子都显示，但每行只高亮当前任务的那一个位置
+function createRMSTaskCell(stName, taskNo, status) {
+    var cell = document.createElement('td');
+    var stationId = getStationId(stName);
+    if (!stationId) {
+        cell.textContent = '-';
+        return cell;
+    }
+
+    var stations = getStationSettings();
+    var station = stations.find(function(s) { return s.id === stationId; });
+    if (!station) {
+        cell.textContent = '-';
+        return cell;
+    }
+
+    var capacity = getSideCapacity(station.current);
+    var taskNum = parseInt(taskNo) || 0;
+
+    // 判断当前任务在左边还是右边
+    var currentSide = '';
+    var currentPos = 0;
+    if (taskNum <= capacity.left) {
+        currentSide = '左';
+        currentPos = taskNum;
+    } else if (taskNum <= capacity.left + capacity.right) {
+        currentSide = '右';
+        currentPos = taskNum - capacity.left;
+    }
+
+    // 当前任务的状态样式
+    var statusClass = 'pending';
+    if (status === '完了' || status === 'FINISHED' || status === 'COMPLETED') {
+        statusClass = 'completed';
+    } else if (status === '進行中' || status === 'WORKING') {
+        statusClass = 'working';
+    } else if (status === '待機中' || status === '待機') {
+        statusClass = 'pending';
+    } else if (status === 'ERROR') {
+        statusClass = 'error';
+    } else if (status === '未割当' || status === '未割当') {
+        statusClass = 'unassigned';
+    }
+
+    // 左と右のグリッドを生成
+    var div = document.createElement('div');
+    div.className = 'rms-task-cell';
+
+    // 左側
+    var leftDiv = document.createElement('div');
+    leftDiv.className = 'rms-task-side';
+    var leftLabel = document.createElement('span');
+    leftLabel.className = 'rms-task-side-label';
+    leftLabel.textContent = '左(' + capacity.left + ')';
+    leftDiv.appendChild(leftLabel);
+
+    var leftGrid = document.createElement('div');
+    leftGrid.className = 'rms-task-grid';
+    for (var i = 1; i <= capacity.left; i++) {
+        var box = document.createElement('div');
+        box.className = 'rms-task-box';
+
+        if (currentSide === '左' && i === currentPos) {
+            // 当前位置高亮显示
+            box.className = 'rms-task-box ' + statusClass;
+            box.textContent = i;
+        } else {
+            // 其他位置显示为空
+            box.className = 'rms-task-box empty';
+            box.textContent = i;
+        }
+        leftGrid.appendChild(box);
+    }
+    leftDiv.appendChild(leftGrid);
+    div.appendChild(leftDiv);
+
+    // 右側
+    var rightDiv = document.createElement('div');
+    rightDiv.className = 'rms-task-side';
+    var rightLabel = document.createElement('span');
+    rightLabel.className = 'rms-task-side-label';
+    rightLabel.textContent = '右(' + capacity.right + ')';
+    rightDiv.appendChild(rightLabel);
+
+    var rightGrid = document.createElement('div');
+    rightGrid.className = 'rms-task-grid';
+    for (var j = 1; j <= capacity.right; j++) {
+        var boxR = document.createElement('div');
+        boxR.className = 'rms-task-box';
+
+        if (currentSide === '右' && j === currentPos) {
+            // 当前位置高亮显示
+            boxR.className = 'rms-task-box ' + statusClass;
+            boxR.textContent = j;
+        } else {
+            // 其他位置显示为空
+            boxR.className = 'rms-task-box empty';
+            boxR.textContent = j;
+        }
+        rightGrid.appendChild(boxR);
+    }
+    rightDiv.appendChild(rightGrid);
+    div.appendChild(rightDiv);
+
+    cell.appendChild(div);
+    return cell;
+}
+
+// タスクデータ
+// 说明：taskNo表示该任务在Station中的分配位置序号
+// 分散分配：先左后右，左边满了分配右边
+var taskData = [
+    // ST01: 4个任务全完成（完了-灰色）
+    { batch: 'BATCH-001', task: 'TASK-001', rmsStatus: '完了', container: 'CT-001', st: 'ST01', taskNo: 1 },  // 左1
+    { batch: 'BATCH-001', task: 'TASK-002', rmsStatus: '完了', container: 'CT-002', st: 'ST01', taskNo: 2 },  // 左2
+    { batch: 'BATCH-001', task: 'TASK-003', rmsStatus: '完了', container: 'CT-003', st: 'ST01', taskNo: 3 },  // 右1
+    { batch: 'BATCH-001', task: 'TASK-004', rmsStatus: '完了', container: 'CT-004', st: 'ST01', taskNo: 4 },  // 右2
+    // ST02: 4个任务，進行中（蓝色）+ 待機中（绿色）
+    { batch: 'BATCH-001', task: 'TASK-005', rmsStatus: '進行中', container: 'CT-005', st: 'ST02', taskNo: 1 },  // 左1
+    { batch: 'BATCH-001', task: 'TASK-006', rmsStatus: '進行中', container: 'CT-006', st: 'ST02', taskNo: 2 },  // 左2
+    { batch: 'BATCH-001', task: 'TASK-007', rmsStatus: '待機中', container: 'CT-007', st: 'ST02', taskNo: 3 },  // 右1
+    { batch: 'BATCH-001', task: 'TASK-008', rmsStatus: '待機中', container: 'CT-008', st: 'ST02', taskNo: 4 },  // 右2
+    // ST01: 追加4个任务，都是進行中（蓝色）- 循环分配：左1,右1,左2,右2
+    { batch: 'BATCH-001', task: 'TASK-009', rmsStatus: '進行中', container: 'CT-009', st: 'ST01', taskNo: 1 },  // 左1
+    { batch: 'BATCH-001', task: 'TASK-010', rmsStatus: '進行中', container: 'CT-010', st: 'ST01', taskNo: 3 },  // 右1
+    { batch: 'BATCH-001', task: 'TASK-011', rmsStatus: '進行中', container: 'CT-011', st: 'ST01', taskNo: 2 },  // 左2
+    { batch: 'BATCH-001', task: 'TASK-012', rmsStatus: '進行中', container: 'CT-012', st: 'ST01', taskNo: 4 },  // 右2
+    // ST03: 2个任务，待機中（绿色）
+    { batch: 'BATCH-001', task: 'TASK-013', rmsStatus: '待機中', container: 'CT-013', st: 'ST03', taskNo: 1 },  // 左1
+    { batch: 'BATCH-001', task: 'TASK-014', rmsStatus: '待機中', container: 'CT-014', st: 'ST03', taskNo: 2 },  // 右1
+    // ST04: 2个任务，未割当（显示为-）
+    { batch: 'BATCH-002', task: 'TASK-015', rmsStatus: '未割当', container: 'CT-015', st: '-', taskNo: 0 },
+    { batch: 'BATCH-002', task: 'TASK-016', rmsStatus: '未割当', container: 'CT-016', st: '-', taskNo: 0 },
+    // ST05: 3个任务示例
+    { batch: 'BATCH-002', task: 'TASK-017', rmsStatus: '待機中', container: 'CT-017', st: 'ST05', taskNo: 1 },
+    { batch: 'BATCH-002', task: 'TASK-018', rmsStatus: '待機中', container: 'CT-018', st: 'ST05', taskNo: 2 },
+    { batch: 'BATCH-002', task: 'TASK-019', rmsStatus: '未割当', container: 'CT-019', st: '-', taskNo: 0 },
+    // ST06: 2个任务示例
+    { batch: 'BATCH-002', task: 'TASK-020', rmsStatus: 'ERROR', container: 'CT-020', st: 'ST06', taskNo: 1 },  // 左1
+    { batch: 'BATCH-002', task: 'TASK-021', rmsStatus: '待機中', container: 'CT-021', st: 'ST06', taskNo: 2 },  // 右1
+    { batch: 'BATCH-002', task: 'TASK-022', rmsStatus: '未割当', container: 'CT-022', st: 'ST06', taskNo: 3 }   // 右2
+];
+
+// タスク一覧を描画
+function renderTasks() {
+    var tbody = document.getElementById('taskTableBody');
+    tbody.innerHTML = '';
+
+    taskData.forEach(function(task) {
+        var tr = document.createElement('tr');
+
+        // バッチ番号
+        var batchTd = document.createElement('td');
+        batchTd.textContent = task.batch;
+        tr.appendChild(batchTd);
+
+        // タスク番号
+        var taskTd = document.createElement('td');
+        taskTd.textContent = task.task;
+        tr.appendChild(taskTd);
+
+        // RMS実施状態
+        var statusTd = document.createElement('td');
+        statusTd.textContent = task.rmsStatus;
+        if (task.rmsStatus === '完了') statusTd.className = 'status-finish';
+        else if (task.rmsStatus === '進行中') statusTd.className = 'status-working';
+        else if (task.rmsStatus === '待機中') statusTd.className = 'status-wait';
+        else if (task.rmsStatus === 'ERROR') statusTd.className = 'status-error';
+        else statusTd.className = 'status-sent';
+        tr.appendChild(statusTd);
+
+        // コンテナ番号
+        var containerTd = document.createElement('td');
+        containerTd.textContent = task.container;
+        tr.appendChild(containerTd);
+
+        // ST番号 - 未割当时显示"-"
+        var stTd = document.createElement('td');
+        stTd.textContent = task.rmsStatus === '未割当' ? '-' : task.st;
+        tr.appendChild(stTd);
+
+        // RMSタスクNo
+        var rmsCell = createRMSTaskCell(task.st, task.taskNo, task.rmsStatus);
+        tr.appendChild(rmsCell);
+
+        tbody.appendChild(tr);
+    });
+}
+
+function filterTable() {
+    var batch = document.getElementById('searchBatch').value.toLowerCase();
+    var task = document.getElementById('searchTask').value.toLowerCase();
+    var container = document.getElementById('searchContainer').value.toLowerCase();
+    var st = document.getElementById('searchST').value;
+    var rmsStatus = document.getElementById('searchRMSStatus').value;
+    var rows = document.querySelectorAll('#taskTableBody tr');
+
+    rows.forEach(function(row) {
+        var cells = row.querySelectorAll('td');
+        var rowBatch = cells[0].textContent.toLowerCase();
+        var rowTask = cells[1].textContent.toLowerCase();
+        var rowContainer = cells[3].textContent.toLowerCase();
+        var rowST = cells[4].textContent;
+        var rowRMSStatus = cells[2].textContent;
+
+        var match = (batch === '' || rowBatch.indexOf(batch) !== -1) &&
+                      (task === '' || rowTask.indexOf(task) !== -1) &&
+                      (container === '' || rowContainer.indexOf(container) !== -1) &&
+                      (st === '' || rowST === st) &&
+                      (rmsStatus === '' || rowRMSStatus.indexOf(rmsStatus) !== -1);
+
+        row.style.display = match ? '' : 'none';
+    });
+}
+
+function resetFilter() {
+    document.getElementById('searchBatch').value = '';
+    document.getElementById('searchTask').value = '';
+    document.getElementById('searchContainer').value = '';
+    document.getElementById('searchST').value = '';
+    document.getElementById('searchRMSStatus').value = '';
+    filterTable();
+}
+
+// 检查未确认异常并显示警示条
+function checkUnacknowledgedExceptions() {
+    var exceptions = JSON.parse(localStorage.getItem('rcs_exceptions') || '[]');
+    var unacknowledged = exceptions.filter(function(e) { return e.status === 'OPEN'; });
+    var criticalErrors = exceptions.filter(function(e) {
+        return e.status === 'OPEN' && (e.severity === 'CRITICAL' || e.severity === 'ERROR');
+    });
+    var alertBar = document.getElementById('exceptionAlertBar');
+    var alertCount = document.getElementById('exceptionAlertCount');
+
+    if (unacknowledged.length > 0 && alertBar && alertCount) {
+        alertCount.textContent = unacknowledged.length;
+        alertBar.classList.add('show');
+    }
+    if (criticalErrors.length > 0 && alertBar) {
+        alertBar.classList.add('show');
+    }
+}
+
+checkUnacknowledgedExceptions();
+renderTasks();
+</script>
+
+</body>
+</html>
