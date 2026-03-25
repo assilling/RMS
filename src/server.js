@@ -242,9 +242,21 @@ app.get('/api/db/status', async (req, res) => {
         slave = db1;
       }
     } else {
-      // どちらもマスターでない場合（古い設定など）
-      master = db1;
-      slave = db2;
+      // どちらもマスターでない場合（古い設定や片方がDOWN）
+      // 自動切替：DOWNしている方をスレーブにする
+      if (db1.status === 'DOWN' && db2.status === 'UP') {
+        master = db2;
+        slave = db1;
+        currentMaster = 'slave';
+      } else if (db2.status === 'DOWN' && db1.status === 'UP') {
+        master = db1;
+        slave = db2;
+        currentMaster = 'master';
+      } else {
+        // 両方DOWN or どちらもマスターでない古い設定
+        master = db1;
+        slave = db2;
+      }
     }
 
     res.json({
@@ -267,13 +279,47 @@ app.post('/api/db/switch', (req, res) => {
   });
 });
 
-// API: 元主庫に戻す
-app.post('/api/db/switch-back', (req, res) => {
-  currentMaster = 'master';
-  res.json({
-    success: true,
-    message: '元主庫 192.168.10.102 に戻しました'
-  });
+// API: 以前のマスターに戻す
+app.post('/api/db/switch-back', async (req, res) => {
+  try {
+    // 以前のマスター(SSH_CONFIG.masterHost = 102)を再開
+    const oldMasterIP = SSH_CONFIG.masterHost;
+    const currentActiveMasterIP = SSH_CONFIG.slaveHost;
+
+    console.log(`[Switch-back] 以前のマスター ${oldMasterIP} に戻す...`);
+
+    // ステップ1: 現在マスター(103)でスレーブ機能を停止
+    console.log('[Switch-back] ステップ1: 現在マスターでスレーブ停止...');
+    await sshMysql(currentActiveMasterIP, 'STOP SLAVE IO_THREAD');
+    await sshMysql(currentActiveMasterIP, 'SET GLOBAL rpl_semi_sync_master_enabled = 0');
+    await sshMysql(currentActiveMasterIP, 'SET GLOBAL rpl_semi_sync_slave_enabled = 0');
+    await sshMysql(currentActiveMasterIP, 'SET GLOBAL rpl_semi_sync_slave_enabled = 1');
+
+    // ステップ2: 以前スレーブ(102)をマスターに変換
+    console.log('[Switch-back] ステップ2: 以前のマスターをマスターに変換...');
+    await sshMysql(oldMasterIP, 'STOP SLAVE IO_THREAD');
+    await sshMysql(oldMasterIP, 'SET GLOBAL rpl_semi_sync_master_enabled = 0');
+    await sshMysql(oldMasterIP, 'SET GLOBAL rpl_semi_sync_slave_enabled = 0');
+    await sshMysql(oldMasterIP, 'SET GLOBAL rpl_semi_sync_master_enabled = 1');
+    await sshMysql(oldMasterIP, 'START SLAVE IO_THREAD');
+
+    // ステップ3: 現在マスター(103)でスレーブ機能を開始
+    console.log('[Switch-back] ステップ3: 現在マスターでスレーブ開始...');
+    await sshMysql(currentActiveMasterIP, 'START SLAVE IO_THREAD');
+
+    currentMaster = 'master';
+
+    res.json({
+      success: true,
+      message: `以前のマスター ${oldMasterIP} に戻しました`
+    });
+  } catch (error) {
+    console.log('[Switch-back] エラー:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // API: 主庫MySQL停止
@@ -347,10 +393,12 @@ app.post('/api/db/force-failover', async (req, res) => {
 
     console.log(`[Failover] 元主庫: ${oldMasterIP}, 新主庫: ${newMasterIP}`);
 
-    // ===== Step 1: 新主庫 (103) で半同期主庫モード有効 =====
-    console.log('[Failover] Step 1: 新主庫で半同期主庫モードを有効...');
-    results.steps.push({ name: '半同期主庫有効化', host: newMasterIP, status: 'pending' });
+    // ===== Step 1: 新主庫 (103) で半同期レプリケーション設定 =====
+    console.log('[Failover] Step 1: 新主庫で半同期設定...');
+    results.steps.push({ name: '新主庫半同期設定', host: newMasterIP, status: 'pending' });
     try {
+      await sshMysql(newMasterIP, "SET GLOBAL rpl_semi_sync_slave_enabled = 0;");
+      await sshMysql(newMasterIP, "SET GLOBAL rpl_semi_sync_master_enabled = 0;");
       await sshMysql(newMasterIP, "SET GLOBAL rpl_semi_sync_master_enabled = 1;");
       results.steps[0].status = 'success';
       console.log('[Failover] Step 1 完了');
@@ -376,21 +424,15 @@ app.post('/api/db/force-failover', async (req, res) => {
       throw new Error(`Step 2 失敗: ${e.message}`);
     }
 
-    // ===== Step 3: 元主庫 (102) を从庫として設定、新主庫 (103) に接続 =====
-    console.log('[Failover] Step 3: 元主庫を从庫として設定...');
-    results.steps.push({ name: '从庫接続設定', host: oldMasterIP, status: 'pending' });
+    // ===== Step 3: 元主庫 (102) で半同期スレーブ設定 =====
+    console.log('[Failover] Step 3: 元主庫で半同期スレーブ設定...');
+    results.steps.push({ name: '半同期スレーブ設定', host: oldMasterIP, status: 'pending' });
     try {
-      // slave停止・リセット
-      await sshMysql(oldMasterIP, "STOP SLAVE; RESET SLAVE ALL;");
-      // 新主庫を設定
-      const changeMasterSQL = `CHANGE MASTER TO
-MASTER_HOST='${newMasterIP}',
-MASTER_USER='repl_user',
-MASTER_PASSWORD='1qazXSW@',
-MASTER_PORT=3306,
-MASTER_AUTO_POSITION=1;`;
-      await sshMysql(oldMasterIP, changeMasterSQL);
-      await sshMysql(oldMasterIP, "START SLAVE;");
+      await sshMysql(oldMasterIP, "STOP SLAVE IO_THREAD;");
+      await sshMysql(oldMasterIP, "SET GLOBAL rpl_semi_sync_slave_enabled = 0;");
+      await sshMysql(oldMasterIP, "SET GLOBAL rpl_semi_sync_master_enabled = 0;");
+      await sshMysql(oldMasterIP, "SET GLOBAL rpl_semi_sync_slave_enabled = 1;");
+      await sshMysql(oldMasterIP, "START SLAVE IO_THREAD;");
       results.steps[2].status = 'success';
       console.log('[Failover] Step 3 完了');
     } catch (e) {
@@ -399,13 +441,11 @@ MASTER_AUTO_POSITION=1;`;
       throw new Error(`Step 3 失敗: ${e.message}`);
     }
 
-    // ===== Step 4: 元主庫 (102) で半同期从庫を有効 =====
-    console.log('[Failover] Step 4: 半同期从庫を有効...');
-    results.steps.push({ name: '半同期从庫有効化', host: oldMasterIP, status: 'pending' });
+    // ===== Step 4: 新主庫 (103) でスレーブIOスレッド開始 =====
+    console.log('[Failover] Step 4: 新主庫でスレーブIO開始...');
+    results.steps.push({ name: '新主庫スレーブIO開始', host: newMasterIP, status: 'pending' });
     try {
-      await sshMysql(oldMasterIP, "SET GLOBAL rpl_semi_sync_slave_enabled = 1;");
-      await sshMysql(oldMasterIP, "STOP SLAVE IO_THREAD;");
-      await sshMysql(oldMasterIP, "START SLAVE IO_THREAD;");
+      await sshMysql(newMasterIP, "START SLAVE IO_THREAD;");
       results.steps[3].status = 'success';
       console.log('[Failover] Step 4 完了');
     } catch (e) {
@@ -414,22 +454,9 @@ MASTER_AUTO_POSITION=1;`;
       throw new Error(`Step 4 失敗: ${e.message}`);
     }
 
-    // ===== Step 5: 新主庫 (103) 状態を確認 =====
-    console.log('[Failover] Step 5: 新主庫状態を確認...');
-    results.steps.push({ name: '新主庫状態確認', host: newMasterIP, status: 'pending' });
-    try {
-      const masterStatus = await sshMysql(newMasterIP, "SHOW STATUS LIKE 'Rpl_semi_sync_master_status';");
-      results.steps[4].status = 'success';
-      results.steps[4].detail = masterStatus;
-      console.log('[Failover] Step 5 完了:', masterStatus);
-    } catch (e) {
-      results.steps[4].status = 'error';
-      results.steps[4].error = e.message;
-    }
-
-    // ===== Step 6: 新从庫 (102) 状態を確認 =====
-    console.log('[Failover] Step 6: 新从庫状態を確認...');
-    results.steps.push({ name: '新从庫状態確認', host: oldMasterIP, status: 'pending' });
+    // ===== Step 5: 状態確認 =====
+    console.log('[Failover] Step 5: 状態確認...');
+    results.steps.push({ name: '状態確認', host: oldMasterIP, status: 'pending' });
     try {
       const slaveStatus = await sshMysql(oldMasterIP, "SHOW STATUS LIKE 'Rpl_semi_sync_slave_status';");
       const showSlave = await sshMysql(oldMasterIP, "SHOW SLAVE STATUS;");
@@ -438,16 +465,16 @@ MASTER_AUTO_POSITION=1;`;
       const ioRunning = showSlave.includes('Slave_IO_Running: Yes');
       const sqlRunning = showSlave.includes('Slave_SQL_Running: Yes');
 
-      results.steps[5].status = 'success';
-      results.steps[5].detail = {
+      results.steps[4].status = 'success';
+      results.steps[4].detail = {
         semiSync: slaveStatus,
         ioRunning: ioRunning,
         sqlRunning: sqlRunning
       };
-      console.log('[Failover] Step 6 完了: IO=' + ioRunning + ', SQL=' + sqlRunning);
+      console.log('[Failover] Step 5 完了: IO=' + ioRunning + ', SQL=' + sqlRunning);
     } catch (e) {
-      results.steps[5].status = 'error';
-      results.steps[5].error = e.message;
+      results.steps[4].status = 'error';
+      results.steps[4].error = e.message;
     }
 
     results.success = true;

@@ -232,8 +232,9 @@ function updateUI(data) {
     // 延迟 <= 1秒 绿色
     document.getElementById('slaveLag').style.color = lag <= 1 ? '#28a745' : '#ffc107';
     document.getElementById('slaveIO').textContent = data.slave.slaveIO || '-';
-    // IO Running Yes 绿色，No 红色
-    document.getElementById('slaveIO').style.color = data.slave.slaveIO === 'Yes' ? '#28a745' : '#dc3545';
+    // IO Running: Yes=绿色, No/Connecting=黄色/红色
+    const ioColor = data.slave.slaveIO === 'Yes' ? '#28a745' : (data.slave.slaveIO === 'Connecting' ? '#ffc107' : '#dc3545');
+    document.getElementById('slaveIO').style.color = ioColor;
     document.getElementById('slaveSQL').textContent = data.slave.slaveSQL || '-';
     // SQL Running Yes 绿色，No 红色
     document.getElementById('slaveSQL').style.color = data.slave.slaveSQL === 'Yes' ? '#28a745' : '#dc3545';

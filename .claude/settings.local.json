@@ -15,7 +15,9 @@
       "Bash(chmod +x /usr/local/bin/sshpass)",
       "Bash(git checkout:*)",
       "Bash(git remote:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
