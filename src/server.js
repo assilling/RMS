@@ -77,8 +77,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 静的ファイルサービス - appディレクトリから提供
-app.use(express.static('app'));
+// 静的ファイルサービス - appディレクトリから提供（HTMLはキャッシュなし）
+app.use(express.static('app', {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 // 接続プール作成
 const masterPool = mysql.createPool({
@@ -125,6 +133,9 @@ async function queryWithTimeout(pool, sql, timeout = 3000) {
 
 // API: データベース状態取得
 app.get('/api/db/status', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   console.log('[DB Status] ステータス確認中...');
   try {
     // 192.168.10.102の状態を確認
